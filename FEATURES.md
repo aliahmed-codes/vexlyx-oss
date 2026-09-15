@@ -31,10 +31,10 @@ This document is the **single source of truth** for all Vexlyx features.
 | Phase 2: Multi-Runtime Support | 🟢 COMPLETED | 100% (8/8) |
 | Phase 3: Domain & DNS | 🟡 IN PROGRESS | 80% (4/5) |
 | Phase 4: Email Server | 🟡 IN PROGRESS | 88% (7/8) |
-| Phase 5: System & Administration | 🟡 IN PROGRESS | 35% (7/20) |
+| Phase 5: System & Administration | 🟡 IN PROGRESS | 40% (8/20) |
 | Phase 6: Ecosystem & Launch | 🔴 NOT STARTED | 0% (0/3) |
 
-**Overall Completion:** 68% (40/59 features)
+**Overall Completion:** 69% (41/59 features)
 
 ---
 
@@ -1992,7 +1992,7 @@ Reported live: a backup run shows `Backups: FAILED — Backup script exited with
 ---
 
 ### F5.15 — Docker Image/Container Cleanup & Disk Reclamation
-**Status:** 🔴 NOT STARTED
+**Status:** 🟢 COMPLETED
 
 **Description:**
 Every redeploy leaves the previous build's Docker image and layers on disk — confirmed by audit: `docker_manager.py`'s `cmd_deploy` uses `docker compose up -d --force-recreate --pull never` (replaces the container but never removes the old image), and `cmd_remove` only runs `docker compose down --volumes --remove-orphans` (no `docker image rm`, no pruning). There is no scheduled or manual cleanup job anywhere in the repo, and no disk-usage-by-category breakdown (images/volumes/containers) in the monitoring module — so disk fills up silently over time with no visibility or way to reclaim it from the panel.
@@ -2000,11 +2000,11 @@ Every redeploy leaves the previous build's Docker image and layers on disk — c
 Comparable tools all solve this: **Coolify** runs configurable automated cleanup (by disk-usage threshold or cron) that removes stopped containers/unused images/build cache, skipping cleanup during an active deploy; **Dokploy** exposes 5 discrete ops (clean unused images/volumes/stopped containers/builder cache/all) runnable manually or via a daily cron; **CapRover** ships a manual "Disk Clean-Up" action (`docker container prune` + `docker image prune --all`).
 
 **Acceptance Criteria:**
-- [ ] Monitoring/Settings page shows a disk-usage breakdown by category (images, containers, volumes, build cache) — e.g. via `docker system df`
-- [ ] A manual "Clean up" action in the dashboard runs the equivalent of `docker container prune` + `docker image prune -a` (skipping images belonging to currently-running containers)
-- [ ] An optional scheduled cleanup job (cron, mirroring the existing `BackupSettings.scheduleCron` pattern), off by default
-- [ ] Redeploying a project optionally removes the previous image after the new one is confirmed healthy (not immediately, to allow rollback)
-- [ ] Cleanup never removes an image/container currently in use by a running project
+- [x] Monitoring/Settings page shows a disk-usage breakdown by category (images, containers, volumes, build cache) — e.g. via `docker system df`
+- [x] A manual "Clean up" action in the dashboard runs the equivalent of `docker container prune` + `docker image prune -a` (skipping images belonging to currently-running containers)
+- [x] An optional scheduled cleanup job (cron, mirroring the existing `BackupSettings.scheduleCron` pattern), off by default
+- [x] Redeploying a project optionally removes the previous image after the new one is confirmed healthy (not immediately, to allow rollback)
+- [x] Cleanup never removes an image/container currently in use by a running project
 
 **Test Plan:**
 1. Redeploy a project several times → confirm old images accumulate (reproducing the current bug) before the fix

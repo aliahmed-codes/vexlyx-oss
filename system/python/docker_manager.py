@@ -14,6 +14,10 @@ Commands:
   remove    -- `docker compose down --volumes --remove-orphans` in the project deploy dir.
   status    -- Inspect running container and return container status.
   logs      -- `docker compose logs --tail=N` in the project deploy dir.
+  system_df -- `docker system df` disk-usage breakdown by category (F5.15).
+  cleanup   -- `docker container prune` + `docker image prune -a` (F5.15).
+  image_id  -- Resolve the current image ID for a tag, or null (F5.15).
+  remove_image -- `docker image rm <id>`, no-ops if the image is in use (F5.15).
 
 Port allocation strategy:
   Each project gets a unique host port derived from a configurable range (default 8100-8999).
@@ -530,6 +534,172 @@ def cmd_logs(payload: dict) -> None:
     respond({"logs": result.stdout.strip() or result.stderr.strip()})
 
 
+def parse_docker_size(text: str) -> int:
+    """
+    Parse a Docker human-readable size string (e.g. "1.2GB", "512kB", "0B")
+    into bytes. Docker formats `system df` sizes with decimal (1000-based)
+    units via go-units, so we mirror that here rather than using 1024-based
+    binary units.
+    """
+    text = text.strip()
+    if not text or text == "N/A":
+        return 0
+    match = re.match(r"^([\d.]+)\s*([a-zA-Z]*)$", text)
+    if not match:
+        return 0
+    value = float(match.group(1))
+    unit = match.group(2).upper()
+    multipliers = {
+        "B": 1,
+        "KB": 1000,
+        "MB": 1000**2,
+        "GB": 1000**3,
+        "TB": 1000**4,
+    }
+    return int(value * multipliers.get(unit, 1))
+
+
+def cmd_system_df(payload: dict) -> None:
+    """
+    Disk-usage breakdown by category (F5.15), via `docker system df`.
+
+    Returns: { categories: [{ type, total, active, sizeBytes, reclaimableBytes }] }
+    """
+    docker_bin = get_docker_binary()
+    result = subprocess.run(
+        [docker_bin, "system", "df", "--format", "{{json .}}"],
+        capture_output=True,
+        text=True,
+        encoding="utf-8",
+        errors="replace",
+    )
+    if result.returncode != 0:
+        fail(
+            f"`docker system df` failed: {result.stderr.strip()}",
+            "SYSTEM_DF_FAILED",
+        )
+        return
+
+    categories = []
+    for line in result.stdout.strip().splitlines():
+        line = line.strip()
+        if not line:
+            continue
+        row = json.loads(line)
+        # Reclaimable is formatted as "1.2GB (85%)" -- take the size part only.
+        reclaimable_raw = row.get("Reclaimable", "0B").split(" ")[0]
+        categories.append({
+            "type": row.get("Type", "unknown"),
+            "total": int(row.get("TotalCount", 0) or 0),
+            "active": int(row.get("Active", 0) or 0),
+            "sizeBytes": parse_docker_size(row.get("Size", "0B")),
+            "reclaimableBytes": parse_docker_size(reclaimable_raw),
+        })
+
+    respond({"categories": categories})
+
+
+def cmd_cleanup(payload: dict) -> None:
+    """
+    Reclaim disk space (F5.15): `docker container prune` then
+    `docker image prune -a`. Never touches volumes or build cache, and never
+    removes an image/container currently in use -- Docker's own prune
+    semantics already guarantee that.
+
+    Returns: { done, containersRemoved, imagesRemoved, reclaimedBytes }
+    """
+    docker_bin = get_docker_binary()
+
+    log_line("[vexlyx] Pruning stopped containers…")
+    container_result = subprocess.run(
+        [docker_bin, "container", "prune", "-f"],
+        capture_output=True,
+        text=True,
+        encoding="utf-8",
+        errors="replace",
+    )
+    if container_result.returncode != 0:
+        fail(
+            f"`docker container prune` failed: {container_result.stderr.strip()}",
+            "CONTAINER_PRUNE_FAILED",
+        )
+        return
+
+    log_line("[vexlyx] Pruning unused images…")
+    image_result = subprocess.run(
+        [docker_bin, "image", "prune", "-a", "-f"],
+        capture_output=True,
+        text=True,
+        encoding="utf-8",
+        errors="replace",
+    )
+    if image_result.returncode != 0:
+        fail(
+            f"`docker image prune` failed: {image_result.stderr.strip()}",
+            "IMAGE_PRUNE_FAILED",
+        )
+        return
+
+    containers_removed = len(re.findall(r"^[0-9a-f]{12,64}$", container_result.stdout, re.MULTILINE))
+    images_removed = len(re.findall(r"^deleted:", image_result.stdout, re.MULTILINE | re.IGNORECASE))
+
+    def extract_reclaimed(text: str) -> int:
+        match = re.search(r"Total reclaimed space:\s*(.+)", text)
+        return parse_docker_size(match.group(1)) if match else 0
+
+    reclaimed_bytes = extract_reclaimed(container_result.stdout) + extract_reclaimed(image_result.stdout)
+
+    log_line(f"[vexlyx] Cleanup complete — reclaimed {reclaimed_bytes} bytes")
+    respond({
+        "done": True,
+        "containersRemoved": containers_removed,
+        "imagesRemoved": images_removed,
+        "reclaimedBytes": reclaimed_bytes,
+    })
+
+
+def cmd_image_id(payload: dict) -> None:
+    """Resolve the current image ID for a tag (F5.15). Returns { imageId } or { imageId: None }."""
+    image_name = require_field(payload, "imageName")
+    docker_bin = get_docker_binary()
+    result = subprocess.run(
+        [docker_bin, "image", "inspect", "--format", "{{.Id}}", image_name],
+        capture_output=True,
+        text=True,
+        encoding="utf-8",
+        errors="replace",
+    )
+    respond({"imageId": result.stdout.strip() if result.returncode == 0 else None})
+
+
+def cmd_remove_image(payload: dict) -> None:
+    """
+    Remove a single image by ID (F5.15), used after a redeploy is confirmed
+    healthy. No `-f`: if the image is still referenced by any container
+    (including the just-replaced one, briefly, or an unrelated project
+    sharing a base image), Docker refuses and we treat that as a no-op
+    rather than an error -- that refusal *is* the "never remove an image in
+    use" safety guarantee.
+
+    Returns: { done: true, removed: bool }
+    """
+    image_id = require_field(payload, "imageId")
+    docker_bin = get_docker_binary()
+    result = subprocess.run(
+        [docker_bin, "image", "rm", image_id],
+        capture_output=True,
+        text=True,
+        encoding="utf-8",
+        errors="replace",
+    )
+    if result.returncode != 0:
+        log_line(f"[vexlyx] Skipped removing image {image_id[:19]} (still in use)")
+        respond({"done": True, "removed": False})
+        return
+
+    respond({"done": True, "removed": True})
+
+
 def cmd_logs_follow(payload: dict) -> None:
     project_dir = require_field(payload, "projectDir")
     project_type = payload.get("projectType", "NODEJS")
@@ -584,6 +754,10 @@ COMMANDS = {
     "status": cmd_status,
     "logs": cmd_logs,
     "logs_follow": cmd_logs_follow,
+    "system_df": cmd_system_df,
+    "cleanup": cmd_cleanup,
+    "image_id": cmd_image_id,
+    "remove_image": cmd_remove_image,
 }
 
 

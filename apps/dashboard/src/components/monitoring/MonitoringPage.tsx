@@ -28,6 +28,8 @@ import { PerCoreCpuBars } from "./PerCoreCpuBars";
 import { MetricHistoryChart } from "./MetricHistoryChart";
 import { ContainerMetricsTable } from "./ContainerMetricsTable";
 import { ThresholdAlertBadge } from "./ThresholdAlertBadge";
+import { DiskUsageCard } from "./DiskUsageCard";
+import { CleanupSettingsCard } from "./CleanupSettingsCard";
 import type { MetricsRange } from "@vexlyx/shared";
 
 // ---------------------------------------------------------------------------
@@ -337,6 +339,12 @@ export function MonitoringPage() {
 
       {/* Full-width container table */}
       <ContainersSection />
+
+      {/* F5.15 — Docker disk usage + cleanup */}
+      <div className="grid gap-6 lg:grid-cols-2">
+        <DiskUsageCard />
+        <CleanupSettingsCard />
+      </div>
     </div>
   );
 }

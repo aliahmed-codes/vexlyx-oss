@@ -102,6 +102,20 @@ enum BackupTrigger {
   MANUAL
 }
 
+/// Status of a Docker cleanup run (F5.15).
+enum CleanupStatus {
+  RUNNING
+  COMPLETED
+  FAILED
+}
+
+/// How a Docker cleanup run was initiated (F5.15).
+enum CleanupTrigger {
+  SCHEDULED
+  MANUAL
+  REDEPLOY
+}
+
 /// Transport protocol a firewall rule applies to.
 enum FirewallProtocol {
   TCP
@@ -525,6 +539,35 @@ model BackupSettings {
   updatedAt       DateTime @updatedAt @map("updated_at")
 
   @@map("backup_settings")
+}
+
+/// Singleton row (F5.15): scheduled Docker cleanup config, off by default.
+model CleanupSettings {
+  id                 String   @id @default("default")
+  scheduleEnabled    Boolean  @default(false) @map("schedule_enabled")
+  scheduleCron       String   @default("0 4 * * *") @map("schedule_cron")
+  pruneAfterRedeploy Boolean  @default(false) @map("prune_after_redeploy")
+  updatedAt          DateTime @updatedAt @map("updated_at")
+
+  @@map("cleanup_settings")
+}
+
+/// A record of one Docker cleanup run (F5.15): manual, scheduled, or
+/// triggered automatically after a redeploy's old image is confirmed safe
+/// to remove.
+model CleanupRun {
+  id                String          @id @default(cuid())
+  trigger           CleanupTrigger
+  status            CleanupStatus   @default(RUNNING)
+  containersRemoved Int?            @map("containers_removed")
+  imagesRemoved     Int?            @map("images_removed")
+  reclaimedBytes    BigInt?         @map("reclaimed_bytes")
+  error             String?
+  startedAt         DateTime        @default(now()) @map("started_at")
+  completedAt       DateTime?       @map("completed_at")
+
+  @@index([startedAt])
+  @@map("cleanup_runs")
 }
 
 /// A single UFW allow/deny rule (F5.4), mirrored to the host firewall via

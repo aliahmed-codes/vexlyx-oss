@@ -533,6 +533,7 @@ Record important architectural decisions here as they happen:
 | 2026-08-28 | Use shadcn/ui over custom components | Accessibility, consistency, speed |
 | 2026-08-28 | Use Python for system layer | Better than Bash for complex Docker ops |
 | 2026-08-28 | Use Nixpacks over custom build scripts | Zero-config, community maintained |
+| 2026-09-15 | F5.15 cleanup keeps subprocess-CLI Docker access, not docker-py SDK | Every existing Docker call (`deploy`/`status`/`logs`/`remove` in `docker_manager.py`) already uses raw `docker`/`docker compose` CLI subprocess calls, contradicting section 6's "Use Python SDK with limited permissions" rule. Migrating to docker-py is a cross-cutting infra change that deserves its own task, not something to bundle silently into a cleanup feature — flagged here rather than pretended away. |
 
 ---
 

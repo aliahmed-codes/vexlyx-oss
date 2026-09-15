@@ -296,6 +296,25 @@ export type {
 } from "./schemas/backups.js";
 
 export {
+  CleanupStatusSchema,
+  CleanupTriggerSchema,
+  DiskUsageCategorySchema,
+  DiskUsageResponseSchema,
+  CleanupRunSchema,
+  CleanupSettingsSchema,
+  UpdateCleanupSettingsSchema,
+} from "./schemas/cleanup.js";
+export type {
+  CleanupStatus,
+  CleanupTrigger,
+  DiskUsageCategory,
+  DiskUsageResponse,
+  CleanupRunResponse,
+  CleanupSettingsResponse,
+  UpdateCleanupSettingsInput,
+} from "./schemas/cleanup.js";
+
+export {
   FirewallProtocolSchema,
   FirewallActionSchema,
   FirewallPolicySchema,

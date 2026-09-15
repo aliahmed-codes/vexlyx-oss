@@ -6,9 +6,10 @@ import type { PrismaClient } from "@prisma/client";
 import type { FastifyBaseLogger } from "fastify";
 import type { Deployment, ProjectType } from "@vexlyx/shared";
 import { env } from "../../config/env.js";
-import { runDockerDeploy } from "../deploy/service.js";
+import { runDockerDeploy, runDockerStatus } from "../deploy/service.js";
 import { runGitManager } from "../git/service.js";
 import { EnvService } from "../env/service.js";
+import { CleanupService } from "../cleanup/service.js";
 import { getIO } from "../../plugins/socket.js";
 import type { BuildJobData, DeploymentListQuery, TriggerBuildBody } from "./schema.js";
 
@@ -515,6 +516,15 @@ export function createBuildProcessor(
       let deployImageName = imageName;
       let staticRoot: string | undefined;
 
+      // F5.15 — capture the image ID this project's tag currently points to
+      // *before* the rebuild retags it, so the superseded image can be
+      // removed after the new one is confirmed healthy. Null on first
+      // deploy (tag doesn't exist yet). Only relevant for the Nixpacks
+      // branch below — static-no-build/WordPress deploy fixed public images
+      // shared across projects, which must never be pruned per-project.
+      const cleanupService = new CleanupService(prisma, logger);
+      let oldImageId: string | null = null;
+
       if (isStaticNoBuild) {
         await appendLog("[vexlyx] Static site with no build command — skipping Nixpacks build");
         deployImageName = "nginx:alpine";
@@ -522,6 +532,11 @@ export function createBuildProcessor(
       } else if (isWordPress) {
         await appendLog("[vexlyx] WordPress project — skipping Nixpacks build, using official WordPress image");
       } else {
+        const cleanupSettings = await cleanupService.getSettings().catch(() => null);
+        if (cleanupSettings?.pruneAfterRedeploy) {
+          oldImageId = await cleanupService.getImageId(imageName).catch(() => null);
+        }
+
         // Phase 2 — build Docker image with caching and build-time env vars
         await appendLog("[vexlyx] Building Docker image with Nixpacks…");
         await runBuildImage(
@@ -577,6 +592,32 @@ export function createBuildProcessor(
       await appendLog(
         `[vexlyx] Container running on port ${deployResult.hostPort} (${deployResult.hostname}) ✓`,
       );
+
+      // F5.15 — once the new container is confirmed healthy (running after a
+      // short grace period), remove the image the tag pointed to before this
+      // rebuild. Best-effort: never blocks or fails the deployment.
+      if (oldImageId) {
+        const imageIdToPrune = oldImageId;
+        void (async () => {
+          try {
+            const composeDir = resolve(projectDir, "deploy");
+            let healthy = false;
+            for (let attempt = 0; attempt < 3; attempt += 1) {
+              await new Promise((r) => setTimeout(r, 2000));
+              const status = await runDockerStatus(composeDir, effectiveProjectType);
+              if (status.containerStatus === "running") {
+                healthy = true;
+                break;
+              }
+            }
+            if (healthy) {
+              await cleanupService.pruneAfterRedeploy(imageIdToPrune);
+            }
+          } catch (cleanupErr) {
+            logger.warn({ deploymentId, cleanupErr }, "Post-redeploy image cleanup failed");
+          }
+        })();
+      }
 
       // Ensure all logs are flushed
       if (saveTimeout) clearTimeout(saveTimeout);
