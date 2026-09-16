@@ -377,6 +377,19 @@ export type {
 } from "./schemas/systemSettings.js";
 
 export {
+  DashboardStatsSchema,
+  ActivityTypeSchema,
+  ActivityItemSchema,
+  DashboardSummaryResponseSchema,
+} from "./schemas/dashboard.js";
+export type {
+  DashboardStats,
+  ActivityType,
+  ActivityItem,
+  DashboardSummaryResponse,
+} from "./schemas/dashboard.js";
+
+export {
   RoleSchema,
   UserResponseSchema,
   QuotaUsageSchema,

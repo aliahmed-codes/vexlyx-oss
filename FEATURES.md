@@ -2018,17 +2018,17 @@ Comparable tools all solve this: **Coolify** runs configurable automated cleanup
 ---
 
 ### F5.16 — Dashboard Home Page: Real Widgets
-**Status:** 🔴 NOT STARTED
+**Status:** 🟢 COMPLETED
 
 **Description:**
 `apps/dashboard/src/app/(panel)/dashboard/page.tsx` is a pure stub today — confirmed by its own doc comment: "Currently uses placeholder data with loading skeletons. Will be connected to real API data in Phase 1." It's 4 `StatCard`s all hardcoded to `value="0"` plus a static "Getting Started" box — no charts, no recent activity, no quick actions, no real data fetching at all, which is why it "looks static."
 
 **Acceptance Criteria:**
-- [ ] Stat tiles show real counts (projects, domains, databases, mailboxes) fetched from the existing list endpoints, not hardcoded zeros
-- [ ] A resource-usage widget (CPU/RAM/disk) reusing data already collected by F5.2's monitoring, so the home page reflects real server health at a glance
-- [ ] A "recent activity" feed (recent deployments, recent backups, recent domain/SSL status changes) — reusing existing `Deployment`/`BackupSnapshot` data
-- [ ] Quick-action buttons (e.g. "New Project", "New Domain") for common tasks
-- [ ] "Getting Started" box only shows for genuinely empty accounts (zero projects), not unconditionally
+- [x] Stat tiles show real counts (projects, domains, databases, mailboxes) fetched from the existing list endpoints, not hardcoded zeros
+- [x] A resource-usage widget (CPU/RAM/disk) reusing data already collected by F5.2's monitoring, so the home page reflects real server health at a glance
+- [x] A "recent activity" feed (recent deployments, recent backups, recent domain/SSL status changes) — reusing existing `Deployment`/`BackupSnapshot` data
+- [x] Quick-action buttons (e.g. "New Project", "New Domain") for common tasks
+- [x] "Getting Started" box only shows for genuinely empty accounts (zero projects), not unconditionally
 
 **Test Plan:**
 1. Fresh account with nothing created → stat tiles show real zeros, "Getting Started" box shows

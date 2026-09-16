@@ -11,6 +11,12 @@ interface StatCardProps {
   /** When true, shows skeleton placeholders instead of actual values */
   isLoading?: boolean;
   className?: string;
+  /**
+   * When given and `limit` is not null, renders a thin used/limit quota bar
+   * beneath the value instead of `description`. A null `limit` means
+   * unlimited — no bar is shown.
+   */
+  usage?: { used: number; limit: number | null };
 }
 
 /**
@@ -26,6 +32,7 @@ export function StatCard({
   icon: Icon,
   isLoading = false,
   className,
+  usage,
 }: StatCardProps) {
   return (
     <Card className={cn("border border-border", className)}>
@@ -44,12 +51,40 @@ export function StatCard({
         ) : (
           <>
             <div className="text-2xl font-bold">{value}</div>
-            {description && (
-              <p className="text-xs text-muted-foreground">{description}</p>
+            {usage && usage.limit !== null ? (
+              <QuotaBar used={usage.used} limit={usage.limit} />
+            ) : (
+              description && (
+                <p className="text-xs text-muted-foreground">{description}</p>
+              )
             )}
           </>
         )}
       </CardContent>
     </Card>
+  );
+}
+
+/** Thin used/limit progress line for a StatCard's quota, e.g. "3 / 10". */
+function QuotaBar({ used, limit }: { used: number; limit: number }) {
+  const pct = limit > 0 ? Math.min(100, (used / limit) * 100) : 0;
+  const barColour = pct >= 90 ? "bg-rose-500" : pct >= 70 ? "bg-amber-500" : "bg-emerald-500";
+
+  return (
+    <div className="mt-2 space-y-1">
+      <div className="h-1.5 w-full overflow-hidden rounded-full bg-muted">
+        <div
+          className={cn("h-full rounded-full transition-all duration-700 ease-out", barColour)}
+          style={{ width: `${pct}%` }}
+          role="progressbar"
+          aria-valuenow={pct}
+          aria-valuemin={0}
+          aria-valuemax={100}
+        />
+      </div>
+      <p className="text-xs text-muted-foreground">
+        {used} / {limit} used
+      </p>
+    </div>
   );
 }

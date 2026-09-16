@@ -11,6 +11,12 @@ interface UsageBarProps {
   warnAt?: number;
   dangerAt?: number;
   className?: string;
+  /**
+   * Overrides the default "used / total" byte caption. Pass `null` to omit
+   * the caption line entirely (e.g. for a percent-only metric like CPU,
+   * where used/total aren't byte counts).
+   */
+  caption?: string | null;
 }
 
 function formatBytes(bytes: number): string {
@@ -33,6 +39,7 @@ export function UsageBar({
   warnAt = 70,
   dangerAt = 90,
   className,
+  caption,
 }: UsageBarProps) {
   const pct =
     percent !== undefined
@@ -78,9 +85,11 @@ export function UsageBar({
       </div>
 
       {/* Used / Total */}
-      <p className="text-xs text-muted-foreground">
-        {formatBytes(used)} / {formatBytes(total)}
-      </p>
+      {caption !== null && (
+        <p className="text-xs text-muted-foreground">
+          {caption ?? `${formatBytes(used)} / ${formatBytes(total)}`}
+        </p>
+      )}
     </div>
   );
 }
