@@ -1,5 +1,6 @@
 import type { FastifyInstance, FastifyReply } from "fastify";
 import { MailboxService, MailboxError } from "./service.js";
+import { AuditLogService } from "../audit-log/service.js";
 import {
   CreateMailboxSchema,
   UpdateMailboxQuotaSchema,
@@ -26,7 +27,8 @@ function handleMailboxError(err: unknown, reply: FastifyReply): void {
 }
 
 export async function mailboxRoutes(app: FastifyInstance) {
-  const service = new MailboxService(app.prisma);
+  const auditLog = new AuditLogService(app.prisma, app.log);
+  const service = new MailboxService(app.prisma, auditLog);
 
   // ---------------------------------------------------------------------------
   // GET /api/mailboxes — list mailboxes (optionally filtered by domainId)

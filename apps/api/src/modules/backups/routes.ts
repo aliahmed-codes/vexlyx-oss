@@ -1,5 +1,6 @@
 import type { FastifyInstance, FastifyReply } from "fastify";
 import { BackupService, BackupError } from "./service.js";
+import { AuditLogService } from "../audit-log/service.js";
 import { RestoreItemSchema, UpdateBackupSettingsSchema, SnapshotIdParamSchema } from "./schema.js";
 import { registerBackupSocketHandlers } from "./socket.js";
 import { getIO } from "../../plugins/socket.js";
@@ -26,7 +27,8 @@ function handleBackupError(err: unknown, reply: FastifyReply): void {
 const BACKUP_QUEUE_NAME = "backup-runner";
 
 export async function backupRoutes(app: FastifyInstance) {
-  const service = new BackupService(app.prisma, app.log);
+  const auditLog = new AuditLogService(app.prisma, app.log);
+  const service = new BackupService(app.prisma, app.log, auditLog);
   const systemService = new SystemService(app.prisma);
   const io = getIO();
 
@@ -152,7 +154,7 @@ export async function backupRoutes(app: FastifyInstance) {
   app.delete("/:id", { preHandler: [app.requireRole("ADMIN")] }, async (request, reply) => {
     try {
       const { id } = SnapshotIdParamSchema.parse(request.params);
-      await service.delete(id);
+      await service.delete(id, request.userId!);
       reply.status(204);
       return null;
     } catch (err) {
@@ -168,7 +170,7 @@ export async function backupRoutes(app: FastifyInstance) {
     try {
       const { id } = SnapshotIdParamSchema.parse(request.params);
       const { itemType, itemId } = RestoreItemSchema.parse(request.body);
-      await service.restoreItem(id, itemType, itemId, io);
+      await service.restoreItem(request.userId!, id, itemType, itemId, io);
       return { message: "Restore completed", itemType, itemId };
     } catch (err) {
       handleBackupError(err, reply);

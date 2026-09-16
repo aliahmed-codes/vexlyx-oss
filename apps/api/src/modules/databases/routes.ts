@@ -1,5 +1,6 @@
 import type { FastifyInstance, FastifyReply } from "fastify";
 import { DatabaseService, DatabaseError } from "./service.js";
+import { AuditLogService } from "../audit-log/service.js";
 import {
   CreateDatabaseSchema,
   DatabaseListQuerySchema,
@@ -23,7 +24,8 @@ function handleDatabaseError(err: unknown, reply: FastifyReply): void {
 }
 
 export async function databaseRoutes(app: FastifyInstance) {
-  const service = new DatabaseService(app.prisma);
+  const auditLog = new AuditLogService(app.prisma, app.log);
+  const service = new DatabaseService(app.prisma, auditLog);
 
   // ---------------------------------------------------------------------------
   // GET /api/databases — list user's databases

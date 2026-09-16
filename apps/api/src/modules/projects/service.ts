@@ -1,6 +1,7 @@
 import type { PrismaClient } from "@prisma/client";
 import type { CreateProjectInput, UpdateProjectInput, ProjectListQuery } from "./schema.js";
 import { assertUnderQuota } from "../../utils/quota.js";
+import type { AuditLogService } from "../audit-log/service.js";
 
 // ---------------------------------------------------------------------------
 // Errors
@@ -46,7 +47,10 @@ const PROJECT_SELECT = {
 // ---------------------------------------------------------------------------
 
 export class ProjectService {
-  constructor(private prisma: PrismaClient) {}
+  constructor(
+    private prisma: PrismaClient,
+    private auditLog: AuditLogService,
+  ) {}
 
   async list(userId: string, query: ProjectListQuery) {
     const { page, limit, type, status, search } = query;
@@ -153,6 +157,10 @@ export class ProjectService {
         select: PROJECT_SELECT,
       });
 
+      await this.auditLog.log(userId, "project.created", { type: "Project", id: project.id }, {
+        after: { name: project.name, type: project.type },
+      });
+
       return project;
     } catch (err: unknown) {
       if (
@@ -231,7 +239,7 @@ export class ProjectService {
 
   async softDelete(userId: string, projectId: string) {
     // Verify ownership
-    await this.getById(userId, projectId);
+    const project = await this.getById(userId, projectId);
 
     await this.prisma.project.update({
       where: { id: projectId },
@@ -239,6 +247,10 @@ export class ProjectService {
         status: "DELETED",
         deletedAt: new Date(),
       },
+    });
+
+    await this.auditLog.log(userId, "project.deleted", { type: "Project", id: projectId }, {
+      before: { name: project.name, type: project.type },
     });
   }
 }

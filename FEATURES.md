@@ -2064,16 +2064,18 @@ Competitor audit (F5.5 follow-up): Plesk, cPanel/WHM, and CapRover all support 2
 ---
 
 ### F5.18 — Audit Log
-**Status:** 🔴 NOT STARTED
+**Status:** 🟢 COMPLETED
 
 **Description:**
 Competitor audit: Dokploy ships audit logs as a first-class access-control feature; cPanel/WHM has detailed action logging. Vexlyx has none — no record of who changed a role, deleted a user, modified a firewall rule, or restored a backup, beyond each individual module's own DB rows (e.g. `FirewallRule.createdBy`). With F5.5-F5.8's admin/reseller user-management now live, this gap is more pressing — an ADMIN can silently change any user's role or delete any account with no trail.
 
+Scope was extended slightly beyond the original criteria (with sign-off) to also cover create/delete for projects, domains, databases, and mailboxes — not just the 5 originally-listed action types.
+
 **Acceptance Criteria:**
-- [ ] New `AuditLog` table: actor (userId), action, target (type + id), metadata (before/after where relevant), timestamp
-- [ ] Logged at minimum: role changes, quota changes, user creation/deletion, firewall rule/policy changes, backup restore/delete
-- [ ] Admin-only `/audit-log` view (table, filterable by actor/action/date)
-- [ ] Does not log request bodies containing secrets (passwords, DB credentials, encrypted env vars)
+- [x] New `AuditLog` table: actor (userId), action, target (type + id), metadata (before/after where relevant), timestamp
+- [x] Logged at minimum: role changes, quota changes, user creation/deletion, firewall rule/policy changes, backup restore/delete
+- [x] Admin-only `/audit-log` view (table, filterable by actor/action/date)
+- [x] Does not log request bodies containing secrets (passwords, DB credentials, encrypted env vars)
 
 **Test Plan:**
 1. Admin changes a user's role → entry appears with old/new role, correct actor
@@ -2186,6 +2188,39 @@ Found live while testing custom domain attachment on `panel.mindgera.site`: afte
 
 **Developer Docs:**
 - **Location:** `docs/dev/domains-dns.md` (append a "Two DNS Modes" section explaining the F3.1 vs F3.3 distinction)
+
+---
+
+### F5.23 — System Transactional Email (Panel-to-User Notifications)
+**Status:** 🔴 NOT STARTED
+
+**Description:**
+Surfaced while planning F5.18 (Audit Log): Vexlyx has no way to email its own panel users for critical/informational events (password reset, security alerts like a new-role/2FA change, quota-warning notices, backup-failure notices, audit events, etc.). This is distinct from the existing `docker/postfix` stack (F4.1, completed), which is customer-facing mail *hosting* — it lets Vexlyx-hosted domains send/receive mail via their own mailboxes, with no involvement from the Vexlyx application itself. There is currently no password-reset flow, no email-verification flow, and no notification/email-template model in the schema at all — this would need to be built from scratch, not just wired up.
+
+**Research findings (2026):**
+- No existing code sends outbound app email today. Existing `SMTP_HOST`/`IMAP_HOST` env vars (`apps/api/src/modules/mail/service.ts`) are only used to health-check the Postfix/Dovecot containers for the customer mail-hosting feature, unrelated to this.
+- Two viable delivery approaches, either is reasonable:
+  1. **Reuse the existing Postfix instance as an internal relay** — submit via port 587 from a dedicated internal sender identity/domain (e.g. `noreply@panel.<host-domain>`) with its own DKIM key via the existing OpenDKIM milter setup. No new dependency, no third-party account, but self-hosted deliverability (SPF/DKIM/DMARC, IP reputation) is entirely on the operator.
+  2. **Third-party transactional provider** (Resend, Postmark, SES, etc.) — better out-of-the-box deliverability, but is a new dependency requiring user confirmation per CLAUDE.md §6, an API key/secret to manage, and a per-install config step.
+- `User` model (`apps/api/prisma/schema.prisma:142`) has no `resetToken`, `emailVerified`, or similar fields; no `Notification`/`EmailTemplate` model exists anywhere in the schema.
+
+**Acceptance Criteria:**
+- [ ] Decide delivery mechanism (internal Postfix relay vs. third-party provider) — needs explicit user sign-off given CLAUDE.md's "no new dependencies without confirming" rule
+- [ ] Password-reset flow (request → emailed token → reset), since none exists today
+- [ ] Critical/security notifications: role change, 2FA enabled/disabled (once F5.17 ships), new login from unrecognized location (if in scope), backup failure
+- [ ] Quota-warning notification (approaching/at plan limits)
+- [ ] Simple email template system (plain layout + subject/body per event type), no marketing/HTML-builder scope
+- [ ] Per-install SMTP/provider configuration (env vars, documented in `.env.example` per CLAUDE.md §14 process)
+- [ ] Does not duplicate or interfere with the existing customer mail-hosting stack (F4.1)
+
+**Test Plan:**
+1. Trigger password reset → email received with working, single-use, expiring token
+2. Admin changes another user's role → that user receives a notification email
+3. Reseller quota nears limit → warning email sent once, not spammed on every request
+4. Existing customer mail hosting (F4.1) continues to function unaffected
+
+**Developer Docs:**
+- **Location:** `docs/dev/system-transactional-email.md`
 
 ---
 

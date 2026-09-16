@@ -8,6 +8,7 @@ import { env } from "../../config/env.js";
 import { encrypt, decrypt } from "../../utils/encryption.js";
 import { assertUnderQuota } from "../../utils/quota.js";
 import { EnvService } from "../env/service.js";
+import type { AuditLogService } from "../audit-log/service.js";
 import type {
   CreateDatabaseInput,
   DatabaseListQuery,
@@ -150,7 +151,13 @@ function generateDbUsername(dbName: string): string {
 export class DatabaseService {
   private envService: EnvService;
 
-  constructor(private prisma: PrismaClient) {
+  // Optional: WordpressService constructs a DatabaseService of its own to
+  // reuse provisioning internals — audit logging is only required on the
+  // instance routes.ts hands to create()/delete().
+  constructor(
+    private prisma: PrismaClient,
+    private auditLog?: AuditLogService,
+  ) {
     this.envService = new EnvService(prisma);
   }
 
@@ -260,6 +267,10 @@ export class DatabaseService {
 
       await this.envService.bulkUpsert(userId, input.projectId, envVars);
     }
+
+    await this.auditLog?.log(userId, "database.created", { type: "Database", id: dbRecord.id }, {
+      after: { name: dbRecord.name, engine: dbRecord.type },
+    });
 
     return this.formatDatabaseDetail(dbRecord, plainPassword);
   }
@@ -412,6 +423,10 @@ export class DatabaseService {
     // Delete from Prisma
     await this.prisma.database.delete({
       where: { id },
+    });
+
+    await this.auditLog?.log(userId, "database.deleted", { type: "Database", id }, {
+      before: { name: record.name, engine: record.type },
     });
 
     return { success: true, id };

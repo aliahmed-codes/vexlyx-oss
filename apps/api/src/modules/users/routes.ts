@@ -1,5 +1,6 @@
 import type { FastifyInstance, FastifyReply } from "fastify";
 import { UserService, UserError } from "./service.js";
+import { AuditLogService } from "../audit-log/service.js";
 import {
   CreateSubAccountSchema,
   UpdateUserRoleSchema,
@@ -16,7 +17,8 @@ function handleUserError(err: unknown, reply: FastifyReply): void {
 }
 
 export async function userRoutes(app: FastifyInstance) {
-  const service = new UserService(app.prisma);
+  const auditLog = new AuditLogService(app.prisma, app.log);
+  const service = new UserService(app.prisma, auditLog);
 
   // GET /api/users/me/usage — any authenticated user, their own quota/usage
   // breakdown (the "Your Plan" dashboard widget).
@@ -50,7 +52,7 @@ export async function userRoutes(app: FastifyInstance) {
     try {
       const { id } = UserIdParamSchema.parse(request.params);
       const body = UpdateUserRoleSchema.parse(request.body);
-      return await service.updateRole(id, body);
+      return await service.updateRole({ id: request.userId!, role: request.userRole! }, id, body);
     } catch (err) {
       handleUserError(err, reply);
     }

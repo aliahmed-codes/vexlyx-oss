@@ -2,6 +2,7 @@ import type { FastifyInstance, FastifyReply } from "fastify";
 import { DomainService, DomainError } from "./service.js";
 import { DnsService } from "./dns-service.js";
 import { SslService } from "./ssl-service.js";
+import { AuditLogService } from "../audit-log/service.js";
 import {
   CreateDomainSchema,
   DomainListQuerySchema,
@@ -36,7 +37,8 @@ function handleDomainError(err: unknown, reply: FastifyReply): void {
 }
 
 export async function domainRoutes(app: FastifyInstance) {
-  const service = new DomainService(app.prisma);
+  const auditLog = new AuditLogService(app.prisma, app.log);
+  const service = new DomainService(app.prisma, auditLog);
   const dnsService = new DnsService(app.prisma);
   const sslService = new SslService(app.prisma);
 

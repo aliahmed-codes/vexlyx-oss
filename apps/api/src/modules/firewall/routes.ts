@@ -1,5 +1,6 @@
 import type { FastifyInstance, FastifyReply } from "fastify";
 import { FirewallService, FirewallError } from "./service.js";
+import { AuditLogService } from "../audit-log/service.js";
 import { CreateFirewallRuleSchema, UpdateFirewallSettingsSchema, FirewallRuleIdParamSchema } from "./schema.js";
 
 // ---------------------------------------------------------------------------
@@ -15,7 +16,8 @@ function handleFirewallError(err: unknown, reply: FastifyReply): void {
 }
 
 export async function firewallRoutes(app: FastifyInstance) {
-  const service = new FirewallService(app.prisma, app.log);
+  const auditLog = new AuditLogService(app.prisma, app.log);
+  const service = new FirewallService(app.prisma, app.log, auditLog);
 
   // ---------------------------------------------------------------------------
   // GET /api/firewall — live status + managed rules
@@ -51,7 +53,7 @@ export async function firewallRoutes(app: FastifyInstance) {
   app.delete("/rules/:id", { preHandler: [app.requireRole("ADMIN")] }, async (request, reply) => {
     try {
       const { id } = FirewallRuleIdParamSchema.parse(request.params);
-      await service.deleteRule(id);
+      await service.deleteRule(request.userId!, id);
       reply.status(204);
       return null;
     } catch (err) {
@@ -66,7 +68,7 @@ export async function firewallRoutes(app: FastifyInstance) {
   app.put("/settings", { preHandler: [app.requireRole("ADMIN")] }, async (request, reply) => {
     try {
       const body = UpdateFirewallSettingsSchema.parse(request.body);
-      return await service.updateSettings(body);
+      return await service.updateSettings(request.userId!, body);
     } catch (err) {
       handleFirewallError(err, reply);
     }

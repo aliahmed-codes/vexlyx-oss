@@ -610,3 +610,31 @@ model FirewallSettings {
 
   @@map("firewall_settings")
 }
+
+/// Generic audit trail (F5.18) for security/admin-sensitive mutations: role
+/// and quota changes, user create/delete, firewall rule/policy changes,
+/// backup restore/delete, and create/delete for projects/domains/databases/
+/// mailboxes. Written only via AuditLogService.log() — never a public write
+/// endpoint. `actorId` intentionally has no FK relation and `actorEmail`/
+/// `actorRole` are a denormalized snapshot captured at write time, so an
+/// entry stays legible even after the actor's account is later deleted.
+/// `metadata` only ever holds an explicit whitelist of changed fields that
+/// each call site assembles — never a raw request/response body — so it can
+/// never contain a password, DB credential, or other secret.
+model AuditLog {
+  id         String   @id @default(cuid())
+  actorId    String?  @map("actor_id")
+  actorEmail String   @map("actor_email")
+  actorRole  Role     @map("actor_role")
+  action     String
+  targetType String   @map("target_type")
+  targetId   String   @map("target_id")
+  metadata   Json?
+  createdAt  DateTime @default(now()) @map("created_at")
+
+  @@index([actorId])
+  @@index([action])
+  @@index([targetType, targetId])
+  @@index([createdAt])
+  @@map("audit_logs")
+}

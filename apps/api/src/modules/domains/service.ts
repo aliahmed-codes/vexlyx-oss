@@ -21,6 +21,7 @@ import type {
 } from "@vexlyx/shared";
 import { env } from "../../config/env.js";
 import { assertUnderQuota } from "../../utils/quota.js";
+import type { AuditLogService } from "../audit-log/service.js";
 
 // ---------------------------------------------------------------------------
 // Error Handling
@@ -156,7 +157,13 @@ export function mapCertificateToResponse(
 // ---------------------------------------------------------------------------
 
 export class DomainService {
-  constructor(private readonly prisma: PrismaClient) {}
+  // Optional: SslService constructs a DomainService of its own purely to
+  // reuse its Traefik-sync helpers, with no audit-relevant calls — so this
+  // is only required on the instance routes.ts hands to create()/delete().
+  constructor(
+    private readonly prisma: PrismaClient,
+    private readonly auditLog?: AuditLogService,
+  ) {}
 
   /**
    * Syncs Traefik dynamic router configuration file for an ACTIVE domain.
@@ -408,6 +415,10 @@ http:
     if (domain.status === "ACTIVE" && domain.project) {
       this.syncTraefikRouter(domain);
     }
+
+    await this.auditLog?.log(userId, "domain.created", { type: "Domain", id: domain.id }, {
+      after: { hostname: domain.hostname },
+    });
 
     return {
       ...domain,
@@ -779,6 +790,10 @@ http:
     // Delete domain (cascades to subdomains and dnsRecords in database)
     await this.prisma.domain.delete({
       where: { id: domain.id },
+    });
+
+    await this.auditLog?.log(userId, "domain.deleted", { type: "Domain", id: domain.id }, {
+      before: { hostname: domain.hostname },
     });
 
     return { success: true };

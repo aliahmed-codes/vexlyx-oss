@@ -408,3 +408,16 @@ export type {
   UpdateUserQuotasInput,
 } from "./schemas/users.js";
 
+export {
+  AUDIT_ACTIONS,
+  AuditLogEntrySchema,
+  AuditLogListResponseSchema,
+  AuditLogQuerySchema,
+} from "./schemas/audit-log.js";
+export type {
+  AuditAction,
+  AuditLogEntry,
+  AuditLogListResponse,
+  AuditLogQuery,
+} from "./schemas/audit-log.js";
+

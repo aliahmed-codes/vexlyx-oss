@@ -11,6 +11,7 @@ import type {
   UpdateFirewallSettingsInput,
 } from "@vexlyx/shared";
 import { env } from "../../config/env.js";
+import type { AuditLogService } from "../audit-log/service.js";
 
 // ---------------------------------------------------------------------------
 // Errors
@@ -148,6 +149,7 @@ export class FirewallService {
   constructor(
     private prisma: PrismaClient,
     private logger: FastifyBaseLogger,
+    private auditLog: AuditLogService,
   ) {}
 
   private getProtectedPorts(): number[] {
@@ -240,6 +242,10 @@ export class FirewallService {
       },
     });
 
+    await this.auditLog.log(userId, "firewall.rule_created", { type: "FirewallRule", id: created.id }, {
+      after: { port: created.port, protocol: created.protocol, action: created.action, source: created.source },
+    });
+
     return {
       id: created.id,
       port: created.port,
@@ -253,7 +259,7 @@ export class FirewallService {
     };
   }
 
-  async deleteRule(id: string): Promise<void> {
+  async deleteRule(userId: string, id: string): Promise<void> {
     const rule = await this.prisma.firewallRule.findUnique({ where: { id } });
     if (!rule) {
       throw new FirewallError("Firewall rule not found", "RULE_NOT_FOUND", 404);
@@ -271,9 +277,15 @@ export class FirewallService {
     );
 
     await this.prisma.firewallRule.delete({ where: { id } });
+
+    await this.auditLog.log(userId, "firewall.rule_deleted", { type: "FirewallRule", id }, {
+      before: { port: rule.port, protocol: rule.protocol, action: rule.action, source: rule.source },
+    });
   }
 
-  async updateSettings(input: UpdateFirewallSettingsInput) {
+  async updateSettings(userId: string, input: UpdateFirewallSettingsInput) {
+    const before = await this.getSettingsRow();
+
     await runFirewallCommand(
       {
         command: "set_default_policy",
@@ -283,10 +295,17 @@ export class FirewallService {
       this.logger,
     );
 
-    return this.prisma.firewallSettings.upsert({
+    const updated = await this.prisma.firewallSettings.upsert({
       where: { id: "default" },
       create: { id: "default", ...input },
       update: input,
     });
+
+    await this.auditLog.log(userId, "firewall.policy_changed", { type: "FirewallSettings", id: "default" }, {
+      before: { defaultIncoming: before.defaultIncoming, defaultOutgoing: before.defaultOutgoing },
+      after: { defaultIncoming: updated.defaultIncoming, defaultOutgoing: updated.defaultOutgoing },
+    });
+
+    return updated;
   }
 }

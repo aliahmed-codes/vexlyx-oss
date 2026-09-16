@@ -14,6 +14,7 @@ import {
   Server,
   Settings,
   Users,
+  ScrollText,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { Separator } from "@/components/ui/separator";
@@ -35,6 +36,7 @@ const navItems = [
   { label: "Firewall", href: "/firewall", icon: Shield, roles: ["ADMIN"] },
   { label: "Services", href: "/services", icon: Server, roles: ["ADMIN"] },
   { label: "Users", href: "/users", icon: Users, roles: ["ADMIN", "RESELLER"] },
+  { label: "Audit Log", href: "/audit-log", icon: ScrollText, roles: ["ADMIN"] },
 ];
 
 const bottomNavItems = [

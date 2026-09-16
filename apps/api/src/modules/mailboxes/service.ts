@@ -9,6 +9,7 @@ import type {
 } from "@vexlyx/shared";
 import { runDovecotManager, MailService } from "../mail/service.js";
 import { assertUnderQuota } from "../../utils/quota.js";
+import type { AuditLogService } from "../audit-log/service.js";
 
 export class MailboxError extends Error {
   constructor(
@@ -28,7 +29,10 @@ function generatePassword(): string {
 export class MailboxService {
   private readonly mailService: MailService;
 
-  constructor(private readonly prisma: PrismaClient) {
+  constructor(
+    private readonly prisma: PrismaClient,
+    private readonly auditLog: AuditLogService,
+  ) {
     this.mailService = new MailService(prisma);
   }
 
@@ -127,6 +131,10 @@ export class MailboxService {
       }
     }
 
+    await this.auditLog.log(userId, "mailbox.created", { type: "Mailbox", id: mailbox.id }, {
+      after: { address: mailbox.address },
+    });
+
     return {
       mailbox: {
         id: mailbox.id,
@@ -204,5 +212,9 @@ export class MailboxService {
     await this.prisma.mailbox.delete({ where: { id: mailbox.id } });
 
     await this.mailService.syncVirtualDomains(userId);
+
+    await this.auditLog.log(userId, "mailbox.deleted", { type: "Mailbox", id: mailboxId }, {
+      before: { address: mailbox.address },
+    });
   }
 }

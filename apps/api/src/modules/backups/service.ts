@@ -9,6 +9,7 @@ import type { BackupManifest, BackupItemType } from "@vexlyx/shared";
 import { env } from "../../config/env.js";
 import { DeployService } from "../deploy/service.js";
 import { DnsService } from "../domains/dns-service.js";
+import type { AuditLogService } from "../audit-log/service.js";
 
 // ---------------------------------------------------------------------------
 // Errors
@@ -244,6 +245,7 @@ export class BackupService {
   constructor(
     private prisma: PrismaClient,
     private logger: FastifyBaseLogger,
+    private auditLog: AuditLogService,
   ) {
     this.deployService = new DeployService(prisma);
     this.dnsService = new DnsService(prisma);
@@ -261,7 +263,10 @@ export class BackupService {
     return snapshot;
   }
 
-  async delete(id: string) {
+  // `actorId` is omitted when called from the scheduled retention-cleanup
+  // path (system-initiated, not a user action) — no audit entry is written
+  // in that case, only for an admin-triggered delete via the API.
+  async delete(id: string, actorId?: string) {
     const snapshot = await this.get(id);
     if (snapshot.archivePath) {
       await runBackupCommand({ command: "delete_archive", archivePath: snapshot.archivePath }, this.logger).catch(
@@ -271,6 +276,12 @@ export class BackupService {
       );
     }
     await this.prisma.backupSnapshot.delete({ where: { id } });
+
+    if (actorId) {
+      await this.auditLog.log(actorId, "backup.deleted", { type: "BackupSnapshot", id }, {
+        before: { trigger: snapshot.trigger, createdAt: snapshot.createdAt.toISOString() },
+      });
+    }
   }
 
   async getSettings() {
@@ -412,6 +423,7 @@ export class BackupService {
   // -------------------------------------------------------------------------
 
   async restoreItem(
+    actorId: string,
     snapshotId: string,
     itemType: BackupItemType,
     itemId: string,
@@ -443,6 +455,10 @@ export class BackupService {
       }
 
       io.to("backups").emit("restore:completed", { snapshotId, itemType, itemId, status: "COMPLETED" });
+
+      await this.auditLog.log(actorId, "backup.restored", { type: "BackupSnapshot", id: snapshotId }, {
+        after: { itemType, itemId },
+      });
     } catch (err) {
       const message = err instanceof Error ? err.message : "Unknown restore error";
       io.to("backups").emit("restore:completed", { snapshotId, itemType, itemId, status: "FAILED", error: message });

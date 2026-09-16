@@ -1,5 +1,6 @@
 import type { FastifyInstance, FastifyReply } from "fastify";
 import { ProjectService, ProjectError } from "./service.js";
+import { AuditLogService } from "../audit-log/service.js";
 import {
   CreateProjectSchema,
   UpdateProjectSchema,
@@ -23,7 +24,8 @@ function handleProjectError(err: unknown, reply: FastifyReply): void {
 }
 
 export async function projectRoutes(app: FastifyInstance) {
-  const service = new ProjectService(app.prisma);
+  const auditLog = new AuditLogService(app.prisma, app.log);
+  const service = new ProjectService(app.prisma, auditLog);
 
   // ---------------------------------------------------------------------------
   // GET /api/projects — list user's projects with offset pagination

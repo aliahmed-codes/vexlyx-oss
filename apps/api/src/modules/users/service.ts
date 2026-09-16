@@ -2,6 +2,7 @@ import type { PrismaClient, Role } from "@prisma/client";
 import * as argon2 from "argon2";
 import type { CreateSubAccountInput, UpdateUserRoleInput, UpdateUserQuotasInput } from "./schema.js";
 import { assertUnderQuota, getUsageSummary } from "../../utils/quota.js";
+import type { AuditLogService } from "../audit-log/service.js";
 
 export class UserError extends Error {
   constructor(
@@ -34,7 +35,10 @@ interface Requester {
 }
 
 export class UserService {
-  constructor(private prisma: PrismaClient) {}
+  constructor(
+    private prisma: PrismaClient,
+    private auditLog: AuditLogService,
+  ) {}
 
   /**
    * Used/limit breakdown for every quota'd resource, for the caller's own
@@ -60,14 +64,23 @@ export class UserService {
 
   // Role changes are ADMIN-only, always — never callable by a RESELLER, so
   // no ownership check is needed here (unlike updateQuotas/delete below).
-  async updateRole(id: string, data: UpdateUserRoleInput) {
-    await this.ensureExists(id);
+  async updateRole(requester: Requester, id: string, data: UpdateUserRoleInput) {
+    const target = await this.ensureExists(id);
 
-    return this.prisma.user.update({
+    const updated = await this.prisma.user.update({
       where: { id },
       data: { role: data.role },
       select: PUBLIC_USER_SELECT,
     });
+
+    await this.auditLog.log(
+      requester.id,
+      "user.role_changed",
+      { type: "User", id },
+      { before: { role: target.role }, after: { role: data.role } },
+    );
+
+    return updated;
   }
 
   /**
@@ -78,11 +91,29 @@ export class UserService {
     const target = await this.ensureExists(id);
     this.assertCanManage(requester, target);
 
-    return this.prisma.user.update({
+    const updated = await this.prisma.user.update({
       where: { id },
       data,
       select: PUBLIC_USER_SELECT,
     });
+
+    await this.auditLog.log(
+      requester.id,
+      "user.quotas_changed",
+      { type: "User", id },
+      {
+        before: {
+          maxProjects: target.maxProjects,
+          maxDomains: target.maxDomains,
+          maxDatabases: target.maxDatabases,
+          maxMailboxes: target.maxMailboxes,
+          maxSubAccounts: target.maxSubAccounts,
+        },
+        after: data,
+      },
+    );
+
+    return updated;
   }
 
   /**
@@ -98,6 +129,13 @@ export class UserService {
     this.assertCanManage(requester, target);
 
     await this.prisma.user.delete({ where: { id } });
+
+    await this.auditLog.log(
+      requester.id,
+      "user.deleted",
+      { type: "User", id },
+      { before: { email: target.email, role: target.role } },
+    );
   }
 
   /**
@@ -136,7 +174,7 @@ export class UserService {
 
     const hashedPassword = await argon2.hash(data.password, { type: argon2.argon2id });
 
-    return this.prisma.user.create({
+    const created = await this.prisma.user.create({
       data: {
         email: data.email,
         name: data.name,
@@ -146,10 +184,29 @@ export class UserService {
       },
       select: PUBLIC_USER_SELECT,
     });
+
+    await this.auditLog.log(requester.id, "user.created", { type: "User", id: created.id }, {
+      after: { email: created.email, role: created.role },
+    });
+
+    return created;
   }
 
   private async ensureExists(id: string) {
-    const user = await this.prisma.user.findUnique({ where: { id }, select: { id: true, resellerId: true } });
+    const user = await this.prisma.user.findUnique({
+      where: { id },
+      select: {
+        id: true,
+        email: true,
+        role: true,
+        resellerId: true,
+        maxProjects: true,
+        maxDomains: true,
+        maxDatabases: true,
+        maxMailboxes: true,
+        maxSubAccounts: true,
+      },
+    });
     if (!user) {
       throw new UserError("User not found", "USER_NOT_FOUND", 404);
     }
