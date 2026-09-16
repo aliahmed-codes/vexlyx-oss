@@ -169,6 +169,12 @@ model User {
   /// Named capabilities granted on top of the role (F5.19). Additive only —
   /// never removes what the role itself already grants.
   permissions Permission[] @default([])
+  /// Reseller-only (F5.20): when true, this reseller's sub-account quotas may
+  /// nominally sum above the reseller's own limit. Enforcement switches from
+  /// nominal-sum (checked when a reseller sets sub-account quotas) to real
+  /// aggregate usage across the reseller + all sub-accounts (checked at
+  /// resource-creation time). ADMIN-only to toggle.
+  oversellingEnabled Boolean @default(false) @map("overselling_enabled")
   createdAt DateTime @default(now()) @map("created_at")
   updatedAt DateTime @updatedAt @map("updated_at")
 

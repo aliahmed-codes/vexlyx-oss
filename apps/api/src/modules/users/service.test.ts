@@ -6,6 +6,7 @@ import type { AuditLogService } from "../audit-log/service.js";
 interface PrismaMock {
   user: {
     findUnique: ReturnType<typeof vi.fn>;
+    findMany: ReturnType<typeof vi.fn>;
     update: ReturnType<typeof vi.fn>;
   };
 }
@@ -21,12 +22,14 @@ const TARGET = {
   maxMailboxes: null,
   maxSubAccounts: null,
   permissions: [],
+  oversellingEnabled: false,
 };
 
 function createPrismaMock(): PrismaMock {
   return {
     user: {
       findUnique: vi.fn().mockResolvedValue(TARGET),
+      findMany: vi.fn().mockResolvedValue([]),
       update: vi.fn().mockResolvedValue({ ...TARGET, permissions: ["canManageDns"] }),
     },
   };
@@ -131,5 +134,72 @@ describe("UserService.updatePermissions", () => {
       { before: { permissions: ["canManageDns"] }, after: { permissions: [] } },
     );
     expect(result.permissions).toEqual([]);
+  });
+});
+
+describe("UserService.updateQuotas — F5.20 overselling", () => {
+  it("rejects a RESELLER (non-admin) trying to set oversellingEnabled", async () => {
+    const prisma = createPrismaMock();
+    prisma.user.findUnique.mockResolvedValue({ ...TARGET, resellerId: "reseller-1", role: "USER" });
+    const auditLog = createAuditLogMock();
+    const service = new UserService(prisma as unknown as PrismaClient, auditLog);
+
+    await expect(
+      service.updateQuotas({ id: "reseller-1", role: "RESELLER" }, "user-2", { oversellingEnabled: true }),
+    ).rejects.toMatchObject({ code: "FORBIDDEN" });
+    expect(prisma.user.update).not.toHaveBeenCalled();
+  });
+
+  it("rejects setting oversellingEnabled on a non-RESELLER target", async () => {
+    const prisma = createPrismaMock();
+    prisma.user.findUnique.mockResolvedValue({ ...TARGET, role: "USER" });
+    const auditLog = createAuditLogMock();
+    const service = new UserService(prisma as unknown as PrismaClient, auditLog);
+
+    await expect(
+      service.updateQuotas({ id: "admin-1", role: "ADMIN" }, "user-2", { oversellingEnabled: true }),
+    ).rejects.toMatchObject({ code: "INVALID_TARGET" });
+    expect(prisma.user.update).not.toHaveBeenCalled();
+  });
+
+  it("allows an ADMIN to enable overselling on a RESELLER target and logs it", async () => {
+    const prisma = createPrismaMock();
+    const reseller = { ...TARGET, id: "reseller-1", role: "RESELLER", resellerId: null };
+    prisma.user.findUnique.mockResolvedValue(reseller);
+    prisma.user.update.mockResolvedValue({ ...reseller, oversellingEnabled: true });
+    const auditLog = createAuditLogMock();
+    const service = new UserService(prisma as unknown as PrismaClient, auditLog);
+
+    const result = await service.updateQuotas(
+      { id: "admin-1", role: "ADMIN" },
+      "reseller-1",
+      { oversellingEnabled: true },
+    );
+
+    expect(result.oversellingEnabled).toBe(true);
+    expect(auditLog.log).toHaveBeenCalledWith(
+      "admin-1",
+      "user.quotas_changed",
+      { type: "User", id: "reseller-1" },
+      expect.objectContaining({ before: expect.objectContaining({ oversellingEnabled: false }) }),
+    );
+  });
+
+  it("blocks a reseller setting a sub-account's quota above the nominal pool cap (overselling off)", async () => {
+    const prisma = createPrismaMock();
+    const subAccount = { ...TARGET, id: "sub-2", resellerId: "reseller-1", role: "USER" };
+    prisma.user.findUnique
+      .mockResolvedValueOnce(subAccount) // ensureExists
+      .mockResolvedValueOnce({ oversellingEnabled: false, maxProjects: 10, maxDomains: null, maxDatabases: null, maxMailboxes: null }); // reseller lookup
+    prisma.user.findMany.mockResolvedValue([
+      { maxProjects: 5, maxDomains: null, maxDatabases: null, maxMailboxes: null },
+    ]);
+    const auditLog = createAuditLogMock();
+    const service = new UserService(prisma as unknown as PrismaClient, auditLog);
+
+    await expect(
+      service.updateQuotas({ id: "reseller-1", role: "RESELLER" }, "sub-2", { maxProjects: 6 }),
+    ).rejects.toMatchObject({ code: "OVERSELL_NOT_ENABLED" });
+    expect(prisma.user.update).not.toHaveBeenCalled();
   });
 });

@@ -67,6 +67,7 @@ export function EditUserDialog({ user, isSaving, canEditRole, isSelf, onOpenChan
     maxSubAccounts: "",
   });
   const [permissions, setPermissions] = useState<Permission[]>([]);
+  const [oversellingEnabled, setOversellingEnabled] = useState(false);
 
   useEffect(() => {
     if (!user) return;
@@ -79,7 +80,12 @@ export function EditUserDialog({ user, isSaving, canEditRole, isSelf, onOpenChan
       maxSubAccounts: toFormValue(user.maxSubAccounts),
     });
     setPermissions(user.permissions);
+    setOversellingEnabled(user.oversellingEnabled);
   }, [user]);
+
+  // Only an ADMIN can toggle overselling, and only for a RESELLER target —
+  // matches the service-layer enforcement in updateQuotas (F5.20).
+  const canEditOverselling = canEditRole && role === "RESELLER";
 
   const togglePermission = (key: Permission, checked: boolean) => {
     setPermissions((prev) => (checked ? [...prev, key] : prev.filter((p) => p !== key)));
@@ -95,6 +101,7 @@ export function EditUserDialog({ user, isSaving, canEditRole, isSelf, onOpenChan
         maxDatabases: fromFormValue(quotas.maxDatabases),
         maxMailboxes: fromFormValue(quotas.maxMailboxes),
         maxSubAccounts: fromFormValue(quotas.maxSubAccounts),
+        oversellingEnabled: canEditOverselling ? oversellingEnabled : undefined,
       },
       permissions: canEditRole ? permissions : undefined,
     });
@@ -148,6 +155,26 @@ export function EditUserDialog({ user, isSaving, canEditRole, isSelf, onOpenChan
                     />
                   </div>
                 ))}
+              </div>
+            </div>
+          )}
+
+          {canEditOverselling && (
+            <div className="space-y-1.5">
+              <Label>Overselling</Label>
+              <div className="flex items-center justify-between gap-3 rounded-lg border border-border p-3">
+                <div className="min-w-0">
+                  <p className="text-sm font-medium">Overselling mode</p>
+                  <p className="text-xs text-muted-foreground">
+                    Allow this reseller&apos;s sub-account quotas to nominally sum above their own limit.
+                    Enforcement switches to real aggregate usage across the reseller and their sub-accounts.
+                  </p>
+                </div>
+                <Switch
+                  className="shrink-0"
+                  checked={oversellingEnabled}
+                  onCheckedChange={setOversellingEnabled}
+                />
               </div>
             </div>
           )}

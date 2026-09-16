@@ -33,6 +33,9 @@ export const UserResponseSchema = z.object({
   maxMailboxes: z.number().int().nullable(),
   maxSubAccounts: z.number().int().nullable(),
   permissions: z.array(PermissionSchema),
+  // Reseller-only (F5.20); always present but only meaningful when role is
+  // RESELLER. ADMIN-only to change.
+  oversellingEnabled: z.boolean(),
   createdAt: z.string().datetime(),
 });
 export type UserResponse = z.infer<typeof UserResponseSchema>;
@@ -40,6 +43,12 @@ export type UserResponse = z.infer<typeof UserResponseSchema>;
 export const QuotaUsageSchema = z.object({
   used: z.number().int(),
   limit: z.number().int().nullable(),
+  // Reseller-only (F5.20): populated on the project/domain/database/mailbox
+  // entries of a reseller's own usage summary. nominalSum is the sum of all
+  // sub-accounts' quota for that resource (null = at least one sub-account
+  // is unlimited). oversold is true when that nominal sum exceeds `limit`.
+  nominalSum: z.number().int().nullable().optional(),
+  oversold: z.boolean().optional(),
 });
 export type QuotaUsage = z.infer<typeof QuotaUsageSchema>;
 
@@ -79,6 +88,9 @@ export const UpdateUserQuotasSchema = z.object({
   maxDatabases: nullableQuota.optional(),
   maxMailboxes: nullableQuota.optional(),
   maxSubAccounts: nullableQuota.optional(),
+  // Reseller-only (F5.20); ADMIN-only to set (enforced in the service, not
+  // here, since that depends on who the requester is).
+  oversellingEnabled: z.boolean().optional(),
 });
 export type UpdateUserQuotasInput = z.infer<typeof UpdateUserQuotasSchema>;
 

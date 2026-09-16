@@ -534,6 +534,7 @@ Record important architectural decisions here as they happen:
 | 2026-08-28 | Use Python for system layer | Better than Bash for complex Docker ops |
 | 2026-08-28 | Use Nixpacks over custom build scripts | Zero-config, community maintained |
 | 2026-09-15 | F5.15 cleanup keeps subprocess-CLI Docker access, not docker-py SDK | Every existing Docker call (`deploy`/`status`/`logs`/`remove` in `docker_manager.py`) already uses raw `docker`/`docker compose` CLI subprocess calls, contradicting section 6's "Use Python SDK with limited permissions" rule. Migrating to docker-py is a cross-cutting infra change that deserves its own task, not something to bundle silently into a cleanup feature — flagged here rather than pretended away. |
+| 2026-09-16 | F5.20 overselling: ADMIN-only toggle, nominal-sum enforcement is new (not pre-existing) | Vexlyx had no cross-check between a reseller's own quota and their sub-accounts' quotas before this feature — "overselling off = today's behavior" required *adding* that nominal-sum guard as the new baseline, not just adding a toggle on top of an existing check. Toggle is ADMIN-only (not reseller self-service) to keep it a deliberate, auditable admin decision, consistent with how quotas themselves are already admin/reseller-managed. See `docs/dev/reseller-overselling.md`. |
 
 ---
 

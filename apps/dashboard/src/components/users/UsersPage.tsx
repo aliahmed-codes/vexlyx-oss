@@ -52,9 +52,33 @@ export function UsersPage() {
   }
 
   const isAdmin = user.role === "ADMIN";
+  const isReseller = user.role === "RESELLER";
+
+  const oversoldResources = isReseller
+    ? (["project", "domain", "database", "mailbox"] as const)
+        .filter((resource) => usage?.[resource]?.oversold)
+        .map((resource) => ({ resource, ...usage![resource] }))
+    : [];
 
   return (
     <div className="space-y-6">
+      {oversoldResources.length > 0 && (
+        <div className="rounded-lg border border-amber-600/30 bg-amber-600/5 p-4 dark:border-amber-400/30 dark:bg-amber-400/5">
+          <p className="text-sm font-medium text-amber-600 dark:text-amber-400">
+            You&apos;re in oversold territory
+          </p>
+          <p className="mt-1 text-xs text-muted-foreground">
+            Your sub-accounts&apos; nominal quotas exceed your own limit for:{" "}
+            {oversoldResources
+              .map(
+                ({ resource, nominalSum, limit }) =>
+                  `${resource}s (${nominalSum ?? "unlimited"} allocated vs. ${limit} limit)`,
+              )
+              .join(", ")}
+            . Actual resource creation is still capped by your real limit.
+          </p>
+        </div>
+      )}
       <div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
         <div>
           <h1 className="text-2xl font-bold tracking-tight">Users</h1>

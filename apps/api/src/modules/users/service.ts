@@ -6,7 +6,7 @@ import type {
   UpdateUserQuotasInput,
   UpdateUserPermissionsInput,
 } from "./schema.js";
-import { assertUnderQuota, getUsageSummary } from "../../utils/quota.js";
+import { assertNominalPoolWithinCap, assertUnderQuota, getUsageSummary } from "../../utils/quota.js";
 import type { AuditLogService } from "../audit-log/service.js";
 
 export class UserError extends Error {
@@ -32,6 +32,7 @@ const PUBLIC_USER_SELECT = {
   maxMailboxes: true,
   maxSubAccounts: true,
   permissions: true,
+  oversellingEnabled: true,
   createdAt: true,
 } as const;
 
@@ -121,10 +122,41 @@ export class UserService {
   /**
    * ADMIN can update any user's quotas; RESELLER can only update quotas on
    * their own sub-accounts (never themselves, another reseller, or admin).
+   *
+   * F5.20: `oversellingEnabled` is ADMIN-only and only meaningful on a
+   * RESELLER target. When the target is itself a sub-account and its
+   * reseller has overselling disabled (the default), the new quota values
+   * must not push the reseller's nominal sub-account sum above the
+   * reseller's own limit.
    */
   async updateQuotas(requester: Requester, id: string, data: UpdateUserQuotasInput) {
     const target = await this.ensureExists(id);
     this.assertCanManage(requester, target);
+
+    if (data.oversellingEnabled !== undefined) {
+      if (requester.role !== "ADMIN") {
+        throw new UserError("Only an administrator can change overselling mode", "FORBIDDEN", 403);
+      }
+      if (target.role !== "RESELLER") {
+        throw new UserError("Overselling mode only applies to reseller accounts", "INVALID_TARGET", 400);
+      }
+    }
+
+    if (target.resellerId) {
+      const finalQuotas = {
+        project: data.maxProjects !== undefined ? data.maxProjects : target.maxProjects,
+        domain: data.maxDomains !== undefined ? data.maxDomains : target.maxDomains,
+        database: data.maxDatabases !== undefined ? data.maxDatabases : target.maxDatabases,
+        mailbox: data.maxMailboxes !== undefined ? data.maxMailboxes : target.maxMailboxes,
+      };
+      await assertNominalPoolWithinCap(
+        this.prisma,
+        target.resellerId,
+        target.id,
+        finalQuotas,
+        (message, code, statusCode) => new UserError(message, code, statusCode),
+      );
+    }
 
     const updated = await this.prisma.user.update({
       where: { id },
@@ -143,6 +175,7 @@ export class UserService {
           maxDatabases: target.maxDatabases,
           maxMailboxes: target.maxMailboxes,
           maxSubAccounts: target.maxSubAccounts,
+          ...(data.oversellingEnabled !== undefined ? { oversellingEnabled: target.oversellingEnabled } : {}),
         },
         after: data,
       },
@@ -241,6 +274,7 @@ export class UserService {
         maxMailboxes: true,
         maxSubAccounts: true,
         permissions: true,
+        oversellingEnabled: true,
       },
     });
     if (!user) {

@@ -2111,16 +2111,16 @@ Competitor audit: Vexlyx's RBAC is fixed (ADMIN/RESELLER/USER, no per-permission
 ---
 
 ### F5.20 — Reseller Overselling Mode for Quotas
-**Status:** 🔴 NOT STARTED
+**Status:** 🟢 COMPLETED
 
 **Description:**
 Competitor audit: WHM's "Overselling" feature lets a reseller nominally assign sub-accounts more resources than the reseller's own cap, while WHM enforces the reseller's real limit against actual aggregate *usage* rather than the nominal sum — standard practice in reseller hosting, since most sub-accounts never use their full allocation. Vexlyx's current model (`apps/api/src/utils/quota.ts`) is the simpler, non-overselling case: a reseller's `maxSubAccounts` and other quotas are flat caps with no allocation/usage distinction. This is a legitimate, deliberately simpler v1 — this task tracks the natural v2 once real reseller usage patterns are known.
 
 **Acceptance Criteria:**
-- [ ] Optional "overselling" mode per reseller (off by default, matching current behavior)
-- [ ] When enabled, a reseller can set sub-account quotas that nominally sum above their own limit
-- [ ] Enforcement switches from "nominal sum ≤ reseller limit" to "actual aggregate usage ≤ reseller limit" at resource-creation time
-- [ ] Clear UI indication when a reseller is in oversold territory (nominal > limit) so they understand the risk
+- [x] Optional "overselling" mode per reseller (off by default, matching current behavior)
+- [x] When enabled, a reseller can set sub-account quotas that nominally sum above their own limit
+- [x] Enforcement switches from "nominal sum ≤ reseller limit" to "actual aggregate usage ≤ reseller limit" at resource-creation time
+- [x] Clear UI indication when a reseller is in oversold territory (nominal > limit) so they understand the risk
 
 **Test Plan:**
 1. Reseller with `maxProjects: 10` creates 3 sub-accounts each with `maxProjects: 5` (nominal sum 15 > 10) — allowed once overselling is on
