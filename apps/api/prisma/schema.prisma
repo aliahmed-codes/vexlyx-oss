@@ -21,6 +21,16 @@ enum Role {
   RESELLER
 }
 
+/// Named capabilities (F5.19) that can be granted to a user on top of their
+/// role. Additive only — a permission never removes what a user's role
+/// already grants them.
+enum Permission {
+  canManageDns
+  canManageFirewall
+  canManageBackups
+  canCreateSubAccounts
+}
+
 /// Supported project/application types for deployment.
 enum ProjectType {
   NODEJS
@@ -156,6 +166,9 @@ model User {
   maxDatabases   Int?     @map("max_databases")
   maxMailboxes   Int?     @map("max_mailboxes")
   maxSubAccounts Int?     @map("max_sub_accounts")
+  /// Named capabilities granted on top of the role (F5.19). Additive only —
+  /// never removes what the role itself already grants.
+  permissions Permission[] @default([])
   createdAt DateTime @default(now()) @map("created_at")
   updatedAt DateTime @updatedAt @map("updated_at")
 

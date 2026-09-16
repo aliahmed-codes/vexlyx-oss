@@ -391,21 +391,25 @@ export type {
 
 export {
   RoleSchema,
+  PermissionSchema,
   UserResponseSchema,
   QuotaUsageSchema,
   UsageSummarySchema,
   CreateSubAccountSchema,
   UpdateUserRoleSchema,
   UpdateUserQuotasSchema,
+  UpdateUserPermissionsSchema,
 } from "./schemas/users.js";
 export type {
   RoleInput,
+  Permission,
   UserResponse,
   QuotaUsage,
   UsageSummary,
   CreateSubAccountInput,
   UpdateUserRoleInput,
   UpdateUserQuotasInput,
+  UpdateUserPermissionsInput,
 } from "./schemas/users.js";
 
 export {

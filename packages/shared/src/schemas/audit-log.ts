@@ -10,6 +10,7 @@ import { RoleSchema } from "./users.js";
 export const AUDIT_ACTIONS = [
   "user.role_changed",
   "user.quotas_changed",
+  "user.permissions_changed",
   "user.created",
   "user.deleted",
   "firewall.rule_created",

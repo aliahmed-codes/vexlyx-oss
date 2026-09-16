@@ -4,11 +4,13 @@ export {
   CreateSubAccountSchema,
   UpdateUserRoleSchema,
   UpdateUserQuotasSchema,
+  UpdateUserPermissionsSchema,
 } from "@vexlyx/shared";
 export type {
   CreateSubAccountInput,
   UpdateUserRoleInput,
   UpdateUserQuotasInput,
+  UpdateUserPermissionsInput,
 } from "@vexlyx/shared";
 
 export const UserIdParamSchema = z.object({

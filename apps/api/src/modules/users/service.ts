@@ -1,6 +1,11 @@
 import type { PrismaClient, Role } from "@prisma/client";
 import * as argon2 from "argon2";
-import type { CreateSubAccountInput, UpdateUserRoleInput, UpdateUserQuotasInput } from "./schema.js";
+import type {
+  CreateSubAccountInput,
+  UpdateUserRoleInput,
+  UpdateUserQuotasInput,
+  UpdateUserPermissionsInput,
+} from "./schema.js";
 import { assertUnderQuota, getUsageSummary } from "../../utils/quota.js";
 import type { AuditLogService } from "../audit-log/service.js";
 
@@ -26,6 +31,7 @@ const PUBLIC_USER_SELECT = {
   maxDatabases: true,
   maxMailboxes: true,
   maxSubAccounts: true,
+  permissions: true,
   createdAt: true,
 } as const;
 
@@ -64,7 +70,15 @@ export class UserService {
 
   // Role changes are ADMIN-only, always — never callable by a RESELLER, so
   // no ownership check is needed here (unlike updateQuotas/delete below).
+  // An ADMIN may not change their own role, though — same reasoning as
+  // "you cannot delete your own account" in delete() below: it prevents an
+  // admin from accidentally demoting/locking themselves out with no one
+  // else able to undo it.
   async updateRole(requester: Requester, id: string, data: UpdateUserRoleInput) {
+    if (id === requester.id) {
+      throw new UserError("You cannot change your own role", "CANNOT_CHANGE_OWN_ROLE", 400);
+    }
+
     const target = await this.ensureExists(id);
 
     const updated = await this.prisma.user.update({
@@ -78,6 +92,27 @@ export class UserService {
       "user.role_changed",
       { type: "User", id },
       { before: { role: target.role }, after: { role: data.role } },
+    );
+
+    return updated;
+  }
+
+  // Permission grants are ADMIN-only, always — same reasoning as
+  // updateRole above: never callable by a RESELLER, so no ownership check.
+  async updatePermissions(requester: Requester, id: string, data: UpdateUserPermissionsInput) {
+    const target = await this.ensureExists(id);
+
+    const updated = await this.prisma.user.update({
+      where: { id },
+      data: { permissions: data.permissions },
+      select: PUBLIC_USER_SELECT,
+    });
+
+    await this.auditLog.log(
+      requester.id,
+      "user.permissions_changed",
+      { type: "User", id },
+      { before: { permissions: target.permissions }, after: { permissions: data.permissions } },
     );
 
     return updated;
@@ -205,6 +240,7 @@ export class UserService {
         maxDatabases: true,
         maxMailboxes: true,
         maxSubAccounts: true,
+        permissions: true,
       },
     });
     if (!user) {

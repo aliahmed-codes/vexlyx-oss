@@ -20,8 +20,17 @@ import type { UserResponse } from "@vexlyx/shared";
  */
 export function UsersPage() {
   const { user, isLoading: isAuthLoading } = useAuth();
-  const { users, isLoading, updateRole, updateQuotas, isSavingQuotas, deleteUser, createSubAccount, isCreating } =
-    useUsers();
+  const {
+    users,
+    isLoading,
+    updateRole,
+    updateQuotas,
+    isSavingQuotas,
+    updatePermissions,
+    deleteUser,
+    createSubAccount,
+    isCreating,
+  } = useUsers();
   const { usage, isLoading: isUsageLoading } = useUsage();
   const [editTarget, setEditTarget] = useState<UserResponse | null>(null);
   const [deleteTarget, setDeleteTarget] = useState<UserResponse | null>(null);
@@ -88,12 +97,14 @@ export function UsersPage() {
 
       <EditUserDialog
         user={editTarget}
-        canEditRole={isAdmin}
+        canEditRole={isAdmin && editTarget?.id !== user.id}
+        isSelf={editTarget?.id === user.id}
         onOpenChange={(open) => !open && setEditTarget(null)}
         isSaving={isSavingQuotas}
         onSave={async (id, data) => {
           if (data.role) await updateRole(id, { role: data.role });
           await updateQuotas(id, data.quotas);
+          if (data.permissions) await updatePermissions(id, { permissions: data.permissions });
           setEditTarget(null);
         }}
       />

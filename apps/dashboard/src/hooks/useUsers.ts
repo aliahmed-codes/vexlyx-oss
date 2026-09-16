@@ -7,6 +7,7 @@ import type {
   CreateSubAccountInput,
   UpdateUserRoleInput,
   UpdateUserQuotasInput,
+  UpdateUserPermissionsInput,
 } from "@vexlyx/shared";
 
 // ---------------------------------------------------------------------------
@@ -56,6 +57,16 @@ async function updateUserQuotas(id: string, input: UpdateUserQuotasInput): Promi
   if (!res.ok) throw new Error(await extractError(res, "Failed to update quotas"));
 }
 
+async function updateUserPermissions(id: string, input: UpdateUserPermissionsInput): Promise<void> {
+  const res = await fetch(`${API_URL}/api/users/${id}/permissions`, {
+    method: "PATCH",
+    credentials: "include",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(input),
+  });
+  if (!res.ok) throw new Error(await extractError(res, "Failed to update permissions"));
+}
+
 async function deleteUser(id: string): Promise<void> {
   const res = await fetch(`${API_URL}/api/users/${id}`, { method: "DELETE", credentials: "include" });
   if (!res.ok) throw new Error(await extractError(res, "Failed to delete user"));
@@ -102,6 +113,16 @@ export function useUsers() {
     onError: (err: Error) => toast.error("Failed to update quotas", { description: err.message }),
   });
 
+  const permissionsMutation = useMutation({
+    mutationFn: ({ id, input }: { id: string; input: UpdateUserPermissionsInput }) =>
+      updateUserPermissions(id, input),
+    onSuccess: () => {
+      toast.success("Permissions updated");
+      void invalidate();
+    },
+    onError: (err: Error) => toast.error("Failed to update permissions", { description: err.message }),
+  });
+
   const deleteMutation = useMutation({
     mutationFn: deleteUser,
     onSuccess: () => {
@@ -119,6 +140,8 @@ export function useUsers() {
     updateRole: (id: string, input: UpdateUserRoleInput) => roleMutation.mutateAsync({ id, input }),
     updateQuotas: (id: string, input: UpdateUserQuotasInput) => quotasMutation.mutateAsync({ id, input }),
     isSavingQuotas: quotasMutation.isPending,
+    updatePermissions: (id: string, input: UpdateUserPermissionsInput) =>
+      permissionsMutation.mutateAsync({ id, input }),
     deleteUser: (id: string) => deleteMutation.mutate(id),
   };
 }

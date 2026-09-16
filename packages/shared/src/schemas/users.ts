@@ -7,6 +7,16 @@ import { z } from "zod";
 export const RoleSchema = z.enum(["ADMIN", "USER", "RESELLER"]);
 export type RoleInput = z.infer<typeof RoleSchema>;
 
+// Named capabilities (F5.19) grantable on top of a role. Additive only — a
+// permission never removes what a user's role already grants them.
+export const PermissionSchema = z.enum([
+  "canManageDns",
+  "canManageFirewall",
+  "canManageBackups",
+  "canCreateSubAccounts",
+]);
+export type Permission = z.infer<typeof PermissionSchema>;
+
 // ---------------------------------------------------------------------------
 // Response shape
 // ---------------------------------------------------------------------------
@@ -22,6 +32,7 @@ export const UserResponseSchema = z.object({
   maxDatabases: z.number().int().nullable(),
   maxMailboxes: z.number().int().nullable(),
   maxSubAccounts: z.number().int().nullable(),
+  permissions: z.array(PermissionSchema),
   createdAt: z.string().datetime(),
 });
 export type UserResponse = z.infer<typeof UserResponseSchema>;
@@ -70,3 +81,8 @@ export const UpdateUserQuotasSchema = z.object({
   maxSubAccounts: nullableQuota.optional(),
 });
 export type UpdateUserQuotasInput = z.infer<typeof UpdateUserQuotasSchema>;
+
+export const UpdateUserPermissionsSchema = z.object({
+  permissions: z.array(PermissionSchema),
+});
+export type UpdateUserPermissionsInput = z.infer<typeof UpdateUserPermissionsSchema>;

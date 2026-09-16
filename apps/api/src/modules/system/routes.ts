@@ -8,17 +8,26 @@ export async function systemRoutes(app: FastifyInstance) {
 
   // GET /api/system/dns-info — public IP + required DNS records (F5.9),
   // surfaced by the Settings page (F5.11) as a post-install reference.
-  app.get("/dns-info", { preHandler: [app.requireRole("ADMIN")] }, async () => {
-    return service.getDnsOnboardingInfo();
-  });
+  // ADMIN, or a user granted canManageDns (F5.19).
+  app.get(
+    "/dns-info",
+    { preHandler: [app.requireRoleOrPermission(["ADMIN"], "canManageDns")] },
+    async () => {
+      return service.getDnsOnboardingInfo();
+    },
+  );
 
   // POST /api/system/dns-info/verify — live-checks each record against
   // public resolvers. POST (not GET) since it triggers real outbound DNS
   // queries rather than reading a cached/static value, mirroring
   // domains/:id/dns/:recordId/propagation's same POST-for-live-check convention.
-  app.post("/dns-info/verify", { preHandler: [app.requireRole("ADMIN")] }, async () => {
-    return service.verifyDnsRecords();
-  });
+  app.post(
+    "/dns-info/verify",
+    { preHandler: [app.requireRoleOrPermission(["ADMIN"], "canManageDns")] },
+    async () => {
+      return service.verifyDnsRecords();
+    },
+  );
 
   // GET /api/system/settings — server timezone (F5.13). Any authenticated
   // user can read it, since it governs how timestamps are displayed for

@@ -5,6 +5,7 @@ import {
   CreateSubAccountSchema,
   UpdateUserRoleSchema,
   UpdateUserQuotasSchema,
+  UpdateUserPermissionsSchema,
   UserIdParamSchema,
 } from "./schema.js";
 
@@ -35,17 +36,22 @@ export async function userRoutes(app: FastifyInstance) {
     }
   });
 
-  // POST /api/users — ADMIN creates a user of any role, RESELLER creates a sub-account
-  app.post("/", { preHandler: [app.requireRole("ADMIN", "RESELLER")] }, async (request, reply) => {
-    try {
-      const body = CreateSubAccountSchema.parse(request.body);
-      const user = await service.createSubAccount({ id: request.userId!, role: request.userRole! }, body);
-      reply.status(201);
-      return user;
-    } catch (err) {
-      handleUserError(err, reply);
-    }
-  });
+  // POST /api/users — ADMIN creates a user of any role, RESELLER creates a
+  // sub-account, or a USER granted canCreateSubAccounts (F5.19)
+  app.post(
+    "/",
+    { preHandler: [app.requireRoleOrPermission(["ADMIN", "RESELLER"], "canCreateSubAccounts")] },
+    async (request, reply) => {
+      try {
+        const body = CreateSubAccountSchema.parse(request.body);
+        const user = await service.createSubAccount({ id: request.userId!, role: request.userRole! }, body);
+        reply.status(201);
+        return user;
+      } catch (err) {
+        handleUserError(err, reply);
+      }
+    },
+  );
 
   // PATCH /api/users/:id/role — ADMIN only
   app.patch("/:id/role", { preHandler: [app.requireRole("ADMIN")] }, async (request, reply) => {
@@ -64,6 +70,17 @@ export async function userRoutes(app: FastifyInstance) {
       const { id } = UserIdParamSchema.parse(request.params);
       const body = UpdateUserQuotasSchema.parse(request.body);
       return await service.updateQuotas({ id: request.userId!, role: request.userRole! }, id, body);
+    } catch (err) {
+      handleUserError(err, reply);
+    }
+  });
+
+  // PATCH /api/users/:id/permissions — ADMIN only (F5.19)
+  app.patch("/:id/permissions", { preHandler: [app.requireRole("ADMIN")] }, async (request, reply) => {
+    try {
+      const { id } = UserIdParamSchema.parse(request.params);
+      const body = UpdateUserPermissionsSchema.parse(request.body);
+      return await service.updatePermissions({ id: request.userId!, role: request.userRole! }, id, body);
     } catch (err) {
       handleUserError(err, reply);
     }

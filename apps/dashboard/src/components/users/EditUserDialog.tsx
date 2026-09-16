@@ -14,15 +14,22 @@ import {
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import type { Role, UserResponse, UpdateUserQuotasInput } from "@vexlyx/shared";
+import { Switch } from "@/components/ui/switch";
+import type { Role, Permission, UserResponse, UpdateUserQuotasInput } from "@vexlyx/shared";
 
 interface EditUserDialogProps {
   user: UserResponse | null;
   isSaving: boolean;
-  /** Only an ADMIN may change roles — a RESELLER editing their own sub-account never sees this field. */
+  /**
+   * Only an ADMIN may change roles or grant permissions — a RESELLER
+   * editing their own sub-account never sees these fields, and neither does
+   * an ADMIN editing their own account (see `isSelf`).
+   */
   canEditRole: boolean;
+  /** True when the signed-in user is editing their own account. An ADMIN can never change their own role — it could lock them (and everyone) out — so the role/permissions fields are hidden and this drives the explanatory copy instead. */
+  isSelf: boolean;
   onOpenChange: (open: boolean) => void;
-  onSave: (id: string, data: { role?: Role; quotas: UpdateUserQuotasInput }) => Promise<void>;
+  onSave: (id: string, data: { role?: Role; quotas: UpdateUserQuotasInput; permissions?: Permission[] }) => Promise<void>;
 }
 
 type QuotaField = "maxProjects" | "maxDomains" | "maxDatabases" | "maxMailboxes" | "maxSubAccounts";
@@ -35,6 +42,13 @@ const QUOTA_FIELDS: { key: QuotaField; label: string }[] = [
   { key: "maxSubAccounts", label: "Max sub-accounts" },
 ];
 
+const PERMISSION_FIELDS: { key: Permission; label: string; description: string }[] = [
+  { key: "canManageDns", label: "Manage DNS", description: "View and verify server DNS records" },
+  { key: "canManageFirewall", label: "Manage firewall", description: "Add, remove, and configure firewall rules" },
+  { key: "canManageBackups", label: "Manage backups", description: "Trigger, restore, and configure backups" },
+  { key: "canCreateSubAccounts", label: "Create sub-accounts", description: "Create sub-accounts without a Reseller role" },
+];
+
 function toFormValue(v: number | null): string {
   return v === null ? "" : String(v);
 }
@@ -43,7 +57,7 @@ function fromFormValue(v: string): number | null {
   return v.trim() === "" ? null : Number(v);
 }
 
-export function EditUserDialog({ user, isSaving, canEditRole, onOpenChange, onSave }: EditUserDialogProps) {
+export function EditUserDialog({ user, isSaving, canEditRole, isSelf, onOpenChange, onSave }: EditUserDialogProps) {
   const [role, setRole] = useState<Role>("USER");
   const [quotas, setQuotas] = useState<Record<QuotaField, string>>({
     maxProjects: "",
@@ -52,6 +66,7 @@ export function EditUserDialog({ user, isSaving, canEditRole, onOpenChange, onSa
     maxMailboxes: "",
     maxSubAccounts: "",
   });
+  const [permissions, setPermissions] = useState<Permission[]>([]);
 
   useEffect(() => {
     if (!user) return;
@@ -63,7 +78,12 @@ export function EditUserDialog({ user, isSaving, canEditRole, onOpenChange, onSa
       maxMailboxes: toFormValue(user.maxMailboxes),
       maxSubAccounts: toFormValue(user.maxSubAccounts),
     });
+    setPermissions(user.permissions);
   }, [user]);
+
+  const togglePermission = (key: Permission, checked: boolean) => {
+    setPermissions((prev) => (checked ? [...prev, key] : prev.filter((p) => p !== key)));
+  };
 
   const handleSave = async () => {
     if (!user) return;
@@ -76,27 +96,30 @@ export function EditUserDialog({ user, isSaving, canEditRole, onOpenChange, onSa
         maxMailboxes: fromFormValue(quotas.maxMailboxes),
         maxSubAccounts: fromFormValue(quotas.maxSubAccounts),
       },
+      permissions: canEditRole ? permissions : undefined,
     });
   };
 
   return (
     <Dialog open={!!user} onOpenChange={onOpenChange}>
-      <DialogContent>
+      <DialogContent className="flex max-h-[85vh] flex-col overflow-hidden sm:max-w-lg">
         <DialogHeader>
           <DialogTitle>Edit user</DialogTitle>
           <DialogDescription>
-            {canEditRole
-              ? `Change ${user?.name}'s role and resource quotas. Leave a quota blank for unlimited.`
-              : `Change ${user?.name}'s resource quotas. Leave a quota blank for unlimited.`}
+            {isSelf
+              ? "You can't change your own role or permissions — only quotas. Leave a quota blank for unlimited."
+              : canEditRole
+                ? `Change ${user?.name}'s role and resource quotas. Leave a quota blank for unlimited.`
+                : `Change ${user?.name}'s resource quotas. Leave a quota blank for unlimited.`}
           </DialogDescription>
         </DialogHeader>
 
-        <div className="space-y-4">
+        <div className="-mx-6 space-y-4 overflow-y-auto px-6">
           {canEditRole && (
             <div className="space-y-1.5">
               <Label htmlFor="user-role">Role</Label>
               <Select value={role} onValueChange={(v: Role) => setRole(v)}>
-                <SelectTrigger id="user-role">
+                <SelectTrigger id="user-role" className="w-full">
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
@@ -108,7 +131,28 @@ export function EditUserDialog({ user, isSaving, canEditRole, onOpenChange, onSa
             </div>
           )}
 
-          <div className="grid grid-cols-2 gap-3">
+          {canEditRole && (
+            <div className="space-y-1.5">
+              <Label>Permissions</Label>
+              <div className="space-y-2 rounded-lg border border-border p-3">
+                {PERMISSION_FIELDS.map(({ key, label, description }) => (
+                  <div key={key} className="flex items-center justify-between gap-3">
+                    <div className="min-w-0">
+                      <p className="text-sm font-medium">{label}</p>
+                      <p className="text-xs text-muted-foreground">{description}</p>
+                    </div>
+                    <Switch
+                      className="shrink-0"
+                      checked={permissions.includes(key)}
+                      onCheckedChange={(checked) => togglePermission(key, checked)}
+                    />
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+
+          <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
             {QUOTA_FIELDS.map(({ key, label }) => (
               <div key={key} className="space-y-1.5">
                 <Label htmlFor={`quota-${key}`}>{label}</Label>

@@ -1,7 +1,7 @@
 import type { FastifyInstance, FastifyRequest, FastifyReply } from "fastify";
 import fp from "fastify-plugin";
 import crypto from "node:crypto";
-import type { Role } from "@prisma/client";
+import type { Role, Permission } from "@prisma/client";
 import { env } from "../config/env.js";
 
 declare module "fastify" {
@@ -16,6 +16,10 @@ declare module "fastify" {
     ) => Promise<void>;
     requireRole: (
       ...roles: Role[]
+    ) => (request: FastifyRequest, reply: FastifyReply) => Promise<void>;
+    requireRoleOrPermission: (
+      roles: Role[],
+      permission: Permission,
     ) => (request: FastifyRequest, reply: FastifyReply) => Promise<void>;
   }
 }
@@ -105,6 +109,41 @@ async function authPlugin(app: FastifyInstance) {
     };
 
   app.decorate("requireRole", requireRole);
+
+  // Shared preHandler factory: grants access to a fixed set of roles OR a
+  // user who's been individually granted `permission` (F5.19). Permissions
+  // are additive only — they never take away what a role already grants —
+  // so this is a superset check, not a replacement for requireRole. Same
+  // fresh-lookup-per-request pattern as requireRole above, for the same
+  // instant-revocation reason.
+  const requireRoleOrPermission =
+    (roles: Role[], permission: Permission) =>
+    async (request: FastifyRequest, reply: FastifyReply) => {
+      if (!request.userId) {
+        return reply.status(401).send({
+          error: "Authentication required",
+          code: "UNAUTHORIZED",
+          details: {},
+        });
+      }
+
+      const user = await app.prisma.user.findUnique({
+        where: { id: request.userId },
+        select: { role: true, permissions: true },
+      });
+
+      if (!user || (!roles.includes(user.role) && !user.permissions.includes(permission))) {
+        return reply.status(403).send({
+          error: "You do not have permission to perform this action",
+          code: "FORBIDDEN_ROLE",
+          details: {},
+        });
+      }
+
+      request.userRole = user.role;
+    };
+
+  app.decorate("requireRoleOrPermission", requireRoleOrPermission);
 }
 
 export const authSessionPlugin = fp(authPlugin, {

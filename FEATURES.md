@@ -31,10 +31,10 @@ This document is the **single source of truth** for all Vexlyx features.
 | Phase 2: Multi-Runtime Support | 🟢 COMPLETED | 100% (8/8) |
 | Phase 3: Domain & DNS | 🟡 IN PROGRESS | 80% (4/5) |
 | Phase 4: Email Server | 🟡 IN PROGRESS | 88% (7/8) |
-| Phase 5: System & Administration | 🟡 IN PROGRESS | 40% (8/20) |
+| Phase 5: System & Administration | 🟡 IN PROGRESS | 45% (9/20) |
 | Phase 6: Ecosystem & Launch | 🔴 NOT STARTED | 0% (0/3) |
 
-**Overall Completion:** 69% (41/59 features)
+**Overall Completion:** 71% (42/59 features)
 
 ---
 
@@ -2089,7 +2089,7 @@ Scope was extended slightly beyond the original criteria (with sign-off) to also
 ---
 
 ### F5.19 — Fine-Grained Custom Permissions
-**Status:** 🔴 NOT STARTED
+**Status:** 🟢 COMPLETED
 
 **Description:**
 Competitor audit: Vexlyx's RBAC is fixed (ADMIN/RESELLER/USER, no per-permission toggles), while WHM (ACL templates per reseller), Plesk (Service/Reseller Plan permission properties, independent of resource limits), and Dokploy (25+ resource categories × CRUD+Deploy/Cancel/Restore, Enterprise tier) all let an admin grant a sub-account/reseller a specific subset of capabilities rather than an all-or-nothing role. Coolify, by contrast, is also fixed-role and has open community requests (coollabsio/coolify#2378, #5293) for exactly this — confirming it's a recognized gap across the market, not just Vexlyx.

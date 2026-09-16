@@ -1,6 +1,13 @@
 /** User roles available in the Vexlyx platform */
 export type Role = "ADMIN" | "USER" | "RESELLER";
 
+/** Named capabilities (F5.19) grantable on top of a role — additive only. */
+export type Permission =
+  | "canManageDns"
+  | "canManageFirewall"
+  | "canManageBackups"
+  | "canCreateSubAccounts";
+
 /**
  * Public user object returned by the API.
  * Matches the select shape used in AuthService (id, email, name, role, createdAt).
@@ -17,6 +24,7 @@ export type User = {
   maxDatabases: number | null;
   maxMailboxes: number | null;
   maxSubAccounts: number | null;
+  permissions: Permission[];
   createdAt: Date | string;
 };
 
