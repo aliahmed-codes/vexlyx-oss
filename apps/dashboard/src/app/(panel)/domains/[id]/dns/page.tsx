@@ -524,6 +524,21 @@ export default function DomainDnsPage() {
       </div>
 
       {/* ----------------------------------------------------------------- */}
+      {/* Optional-Feature Explainer */}
+      {/* ----------------------------------------------------------------- */}
+      <div className="flex gap-3 rounded-lg border border-indigo-500/20 bg-indigo-500/5 p-4">
+        <Network className="h-4 w-4 shrink-0 text-indigo-500 mt-0.5" />
+        <p className="text-xs text-muted-foreground leading-relaxed">
+          <span className="font-medium text-foreground">This is optional.</span> Hosting DNS
+          here makes Vexlyx the authoritative nameserver for {domain.hostname} &mdash; every
+          record for the domain, not just this project, moves here. It&rsquo;s unrelated to
+          whether {domain.hostname} routes to your project: the A/TXT records you add at your
+          existing registrar already handle that on their own, with no need to ever visit this
+          page.
+        </p>
+      </div>
+
+      {/* ----------------------------------------------------------------- */}
       {/* Zone Overview Metric Cards */}
       {/* ----------------------------------------------------------------- */}
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">

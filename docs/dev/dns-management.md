@@ -196,3 +196,18 @@ A UX/responsiveness pass on `/domains` and `/domains/[id]/dns` fixed several ove
 - **DNS records table Name column** (`domains/[id]/dns/page.tsx`): displayed `record.name` followed by an appended `.{domain.hostname}` suffix, assuming `name` is always zone-relative. The auto-created verification TXT record stores `name` as the full hostname already, so the suffix duplicated it and, combined with a `flex items-center` wrapper, visually overlapped once the name wrapped across lines in the narrow column. Fixed by skipping the suffix when `record.name` already ends with the domain's hostname, and replacing the flex row with plain wrapping text (`break-all`) plus `align-top` on the row so a wrapped Name cell doesn't throw off sibling cells' alignment.
 - **DNS table toolbar** (`domains/[id]/dns/page.tsx`): the record-type filter pills, search input, and "Recommended Defaults" button relied on `overflow-x-auto` to stay contained, but the row still extended past the card in some layouts. Replaced with `flex-wrap` throughout (pills, search box, button) so the row wraps onto additional lines instead of ever overflowing — the outer group only switches to a single side-by-side row at the `lg` breakpoint, where there's enough width for all of it.
 - **SRV form grid** (`domains/[id]/dns/page.tsx`): the Priority/Weight/Port `grid-cols-3` in the Add/Edit Record dialog was left unchanged — three short number inputs fit comfortably at 360px without cramping.
+
+---
+
+## 9. Two DNS Modes (F5.22)
+
+Vexlyx supports two independent, non-overlapping ways for a domain to end up pointed at a project. Confusing them was a real support complaint ("why I show the NS panel if here I just want to add a domain, not manage the domain's nameserver") — this section exists to keep the distinction clear for anyone touching either flow.
+
+| | **F3.1 — Self-serve A/TXT** | **F3.3 — CoreDNS zone hosting (this doc)** |
+|---|---|---|
+| **What it does** | User adds one A record (and a TXT record for ownership verification) at their *existing* registrar/DNS provider. | User delegates the domain's *entire* authoritative DNS — every record, not just this project's — to Vexlyx's own nameservers (`ns1.vexlyx.com` / `ns2.vexlyx.com`). |
+| **Where** | `/domains` — "Verify" flow + the DNS Verification Ownership instructions dialog. | `/domains/[id]/dns` — the full zone management page described above. |
+| **Required?** | Yes — this is how a domain routes to a project at all. | No. Entirely optional; most users never need to visit `/domains/[id]/dns`. |
+| **Prerequisite** | None beyond DNS access at the existing registrar. | Changing the domain's NS records at the registrar to point at Vexlyx — a much bigger, riskier step (it moves *all* DNS, including any existing MX/email records) than adding one A record. |
+
+Before F5.22, `/domains` showed a "Manage DNS" button styled identically to "Manage SSL" on every domain card, implying both were required next steps. It has been relabeled **"Host DNS on Vexlyx"** with a tooltip clarifying it's optional and what it actually delegates (`apps/dashboard/src/app/(panel)/domains/page.tsx`). The zone page itself now opens with an explainer callout making the same distinction before the metric cards (`apps/dashboard/src/app/(panel)/domains/[id]/dns/page.tsx`). No behavior in either flow changed — this was a labeling/clarity fix only.

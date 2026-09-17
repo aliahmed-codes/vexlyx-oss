@@ -49,6 +49,12 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipProvider,
+  TooltipTrigger,
+} from "@/components/ui/tooltip";
 import { useDomains } from "@/hooks/useDomains";
 import { useProjects } from "@/hooks/useProjects";
 import { useUsage } from "@/hooks/useUsage";
@@ -293,6 +299,7 @@ export default function DomainsPage() {
   };
 
   return (
+    <TooltipProvider delayDuration={200}>
     <div className="space-y-6">
       {/* ── Page Header ───────────────────────────────────────────────────── */}
       <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
@@ -645,17 +652,27 @@ export default function DomainsPage() {
 
                   <div className="flex flex-col gap-2 pt-1">
                     <div className="flex items-center justify-between gap-2">
-                      <Button
-                        asChild
-                        variant="outline"
-                        size="sm"
-                        className="h-8 flex-1 text-xs gap-1.5 font-medium hover:text-primary"
-                      >
-                        <Link href={`/domains/${domain.id}/dns`}>
-                          <Server className="h-3.5 w-3.5 text-indigo-500" />
-                          Manage DNS
-                        </Link>
-                      </Button>
+                      <Tooltip>
+                        <TooltipTrigger asChild>
+                          <Button
+                            asChild
+                            variant="outline"
+                            size="sm"
+                            className="h-8 flex-1 text-xs gap-1.5 font-medium hover:text-primary"
+                          >
+                            <Link href={`/domains/${domain.id}/dns`}>
+                              <Server className="h-3.5 w-3.5 text-indigo-500" />
+                              Host DNS on Vexlyx
+                            </Link>
+                          </Button>
+                        </TooltipTrigger>
+                        <TooltipContent side="bottom" className="max-w-64 text-xs">
+                          Optional: delegates this domain&rsquo;s entire nameserver hosting to
+                          Vexlyx&rsquo;s CoreDNS. Not needed if you just want this domain to route
+                          here &mdash; the A/TXT records you already added at your registrar
+                          handle that.
+                        </TooltipContent>
+                      </Tooltip>
 
                       <Button
                         asChild
@@ -928,5 +945,6 @@ export default function DomainsPage() {
         </DialogContent>
       </Dialog>
     </div>
+    </TooltipProvider>
   );
 }

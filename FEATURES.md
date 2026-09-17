@@ -2171,15 +2171,15 @@ The user's underlying ask: why can't a plain PHP site work the way it does on He
 ---
 
 ### F5.22 — Clarify "Manage DNS" as an Optional Alternative, Not a Required Step
-**Status:** 🔴 NOT STARTED
+**Status:** 🟢 COMPLETED
 
 **Description:**
 Found live while testing custom domain attachment on `panel.mindgera.site`: after attaching a domain to a project (F3.1 — TXT verification + an A record pointed at the server, entirely self-serve at the user's existing registrar/DNS provider), the `/domains` list page shows a "Manage DNS" button on every domain card, styled and positioned identically to "Manage SSL" (`apps/dashboard/src/app/(panel)/domains/page.tsx:646-668`) — as if both are required follow-up steps. Clicking it lands on `/domains/[id]/dns`, which is actually a **separate, optional feature** (F3.3): fully delegating the domain's authoritative DNS hosting to Vexlyx's own CoreDNS (`ns1.vexlyx.com`/`ns2.vexlyx.com`, `domains/[id]/dns/page.tsx:497-510`). A user who just wants to point one subdomain at their project — keeping DNS at their existing registrar, which already works correctly via the A/TXT records — has no reason to ever touch this, but the UI gives no indication it's optional. Confirmed via user feedback: "why I show the NS panel if here I just want to add a domain, not manage the domain's [name]server."
 
 **Acceptance Criteria:**
-- [ ] "Manage DNS" is visually/textually distinguished from required setup steps — e.g. relabeled (something like "Host DNS on Vexlyx") and/or an "optional" badge or tooltip explaining what it actually does before the user clicks in
-- [ ] The DNS zone page itself (`domains/[id]/dns/page.tsx`) gets a brief explanatory note at the top clarifying this delegates the *entire domain's* DNS hosting to Vexlyx and is unrelated to whether the attached project routes correctly (which A/TXT records at any provider already handle)
-- [ ] No functional change to either flow — both F3.1 (self-serve A/TXT) and F3.3 (CoreDNS zone hosting) keep working exactly as they do today; this is a clarity/labeling fix only
+- [x] "Manage DNS" is visually/textually distinguished from required setup steps — e.g. relabeled (something like "Host DNS on Vexlyx") and/or an "optional" badge or tooltip explaining what it actually does before the user clicks in
+- [x] The DNS zone page itself (`domains/[id]/dns/page.tsx`) gets a brief explanatory note at the top clarifying this delegates the *entire domain's* DNS hosting to Vexlyx and is unrelated to whether the attached project routes correctly (which A/TXT records at any provider already handle)
+- [x] No functional change to either flow — both F3.1 (self-serve A/TXT) and F3.3 (CoreDNS zone hosting) keep working exactly as they do today; this is a clarity/labeling fix only
 
 **Test Plan:**
 1. Attach a domain to a project, verify it, add the A record at an external registrar → domain routes correctly without ever visiting `/domains/[id]/dns`
@@ -2187,7 +2187,7 @@ Found live while testing custom domain attachment on `panel.mindgera.site`: afte
 3. Visit `/domains/[id]/dns` directly → explanatory copy makes clear this is "become the nameserver" territory, distinct from the simpler per-domain A/TXT setup
 
 **Developer Docs:**
-- **Location:** `docs/dev/domains-dns.md` (append a "Two DNS Modes" section explaining the F3.1 vs F3.3 distinction)
+- **Location:** `docs/dev/dns-management.md` (§9 "Two DNS Modes" — the standalone `docs/dev/domains-dns.md` proposed originally didn't exist; F3.3's DNS zone hosting doc already covers this exact page and was the natural home for the distinction)
 
 ---
 
