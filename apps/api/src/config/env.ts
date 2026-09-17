@@ -82,6 +82,10 @@ const envSchema = z.object({
   // (one-time) SSH-lockout guard this mirrors at runtime.
   FIREWALL_SSH_PORT: z.coerce.number().int().min(1).max(65535).default(22),
   FIREWALL_HELPER_IMAGE: z.string().min(1).default("vexlyx-ufw-helper:latest"),
+  // No-build PHP hosting (F5.21) — fixed PHP-FPM image (common extensions
+  // baked in, see docker/php-fpm/Dockerfile) that composer-less PHP projects
+  // deploy against instead of a per-project Nixpacks build.
+  PHP_FPM_IMAGE: z.string().min(1).default("vexlyx-php-fpm:8.3"),
   // Service Status Dashboard (F5.6) — container names for the managed
   // services. POSTGRES_CONTAINER_NAME already exists above (F2.6); the rest
   // follow the same "configurable via env, sane default" convention.

@@ -512,6 +512,9 @@ export function createBuildProcessor(
       const isStaticNoBuild =
         (effectiveProjectType === "STATIC" || effectiveProjectType === "REACT") && !effectiveBuildCmd;
       const isWordPress = effectiveProjectType === "WORDPRESS";
+      // F5.21 — no-build deploy path for PHP with no composer.json/buildCmd,
+      // generalizing the WordPress two-container (PHP-FPM + nginx) shape.
+      const isPhpNoBuild = effectiveProjectType === "PHP" && !effectiveBuildCmd;
 
       let deployImageName = imageName;
       let staticRoot: string | undefined;
@@ -531,6 +534,10 @@ export function createBuildProcessor(
         staticRoot = projectDir;
       } else if (isWordPress) {
         await appendLog("[vexlyx] WordPress project — skipping Nixpacks build, using official WordPress image");
+      } else if (isPhpNoBuild) {
+        await appendLog("[vexlyx] PHP project with no build command — skipping Nixpacks build");
+        deployImageName = env.PHP_FPM_IMAGE;
+        staticRoot = projectDir;
       } else {
         const cleanupSettings = await cleanupService.getSettings().catch(() => null);
         if (cleanupSettings?.pruneAfterRedeploy) {
@@ -584,6 +591,7 @@ export function createBuildProcessor(
           portRangeEnd: env.DEPLOY_PORT_RANGE_END,
           containerPort: project.port,
           staticRoot,
+          phpFpmImage: env.PHP_FPM_IMAGE,
           envVars,
         },
         appendLog,

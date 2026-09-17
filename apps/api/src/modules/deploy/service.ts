@@ -81,6 +81,8 @@ export function runDockerDeploy(
     envVars?: Record<string, string>;
     /** F5.7 — host dir to bind-mount as the nginx webroot for STATIC/REACT. */
     staticRoot?: string;
+    /** F5.21 — PHP-FPM image for no-build PHP deploys (docker/php-fpm). */
+    phpFpmImage?: string;
   },
   onLog?: (line: string) => Promise<void> | void,
 ): Promise<DeployResult> {
@@ -460,6 +462,14 @@ export class DeployService {
       }
     }
 
+    // F5.21 — same redeploy-without-rebuild treatment for no-build PHP
+    // (no composer.json/buildCmd): bind-mount the project dir directly, no
+    // Nixpacks image involved.
+    if (project.type === "PHP" && !project.buildCmd) {
+      imageName = env.PHP_FPM_IMAGE;
+      staticRoot = projectDir;
+    }
+
     // Update project status to CREATING / DEPLOYING
     await this.prisma.project.update({
       where: { id: projectId },
@@ -483,6 +493,7 @@ export class DeployService {
       containerPort: project.port,
       domain: body.domain,
       staticRoot,
+      phpFpmImage: env.PHP_FPM_IMAGE,
       envVars,
     });
 

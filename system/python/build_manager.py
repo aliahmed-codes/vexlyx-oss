@@ -1101,13 +1101,17 @@ def cmd_build(payload: dict) -> None:
     if not build_cmd and detected_build:
         build_cmd = detected_build
 
-    # Nixpacks' own PHP provider only recognizes a project as PHP when a
-    # composer.json is present -- unlike our own detect_php_project(), which
-    # also accepts bare .php files with no framework/dependencies. Without
-    # this, a "pure PHP" project (plain .php files, no composer.json) passes
-    # Vexlyx's own plan/detect step but then fails nixpacks' real build with
-    # "unable to generate a build plan". Bridge the gap with an empty
-    # composer.json so nixpacks can build it like any other PHP app.
+    # Fallback only (F5.21): a composer-less PHP/WORDPRESS project now takes
+    # the no-build path (docker_manager.py's php-no-build.yml / official
+    # WordPress image) and never reaches cmd_build at all -- the API service
+    # skips calling it, same as it already does for STATIC/REACT no-build.
+    # This still fires for the narrow case of a user explicitly forcing a
+    # build override on a composer-less PHP project: Nixpacks' own PHP
+    # provider only recognizes a project as PHP when a composer.json is
+    # present -- unlike our own detect_php_project(), which also accepts
+    # bare .php files with no framework/dependencies. Without this, such a
+    # forced build fails nixpacks with "unable to generate a build plan".
+    # Bridge the gap with an empty composer.json so nixpacks can build it.
     if detected_type in ("PHP", "WORDPRESS") and not (project_path / "composer.json").is_file():
         (project_path / "composer.json").write_text("{}\n", encoding="utf-8")
         log_line("[vexlyx] No composer.json found — created a minimal one so Nixpacks can build this PHP project")

@@ -2134,7 +2134,7 @@ Competitor audit: WHM's "Overselling" feature lets a reseller nominally assign s
 
 ### F5.21 — No-Build PHP Hosting (File-Manager-First, Traditional-Panel Style)
 
-**Status:** 🔴 NOT STARTED
+**Status:** 🟢 COMPLETED — verified live in two passes: (1) a synthetic composer-less `index.php` project deployed in seconds with no Nixpacks build, confirmed read-write vs read-only mounts, confirmed `composer.json` projects still build via Nixpacks unaffected; (2) a real ~26k-file Duplicator WordPress migration surfaced and fixed four additional bugs the synthetic test missed — nginx's 60s `fastcgi_read_timeout` too short for real extraction, a `wp-login.php` HTTPS redirect loop (PHP never saw `$_SERVER['HTTPS']` behind Traefik's TLS termination), a cross-project request-routing bug (Compose's `app`/`web` service-name aliases collide on the shared `traefik-net` when 2+ projects run at once), and pretty permalinks (`/about-page/`) 404ing because `location /` hard-404'd instead of falling back to `index.php`. All four fixed in the templates and confirmed working end-to-end afterward, including real page content rendering correctly — see `docs/dev/no-build-php-hosting.md`
 
 **Description:**
 F5.7 gave STATIC/REACT and WORDPRESS a no-build deploy path, but plain PHP projects were left out of scope and still go through Nixpacks unconditionally — even for a project that's just a handful of `.php` files with no Composer dependencies, which is architecturally identical to a no-`buildCmd` static site. This surfaced directly while helping a user deploy a Duplicator (WordPress migration) backup: it's an `installer.php` + a site archive `.zip`, no `composer.json`, no `index.php`. Nixpacks' own PHP provider detects a project as PHP only when it finds a `composer.json` **or** an `index.php` (confirmed against the official docs — see sources), so `nixpacks build` failed outright with "unable to generate a build plan" even though Vexlyx's own (more lenient) framework detection had already classified it as PHP. As an immediate stopgap (not a real fix), `build_manager.py`'s `cmd_build` now auto-writes an empty `composer.json` when a PHP/WordPress project has none, purely so Nixpacks' detection succeeds — this should be reconsidered/removed once real no-build PHP hosting ships, since the correct fix is skipping the build entirely, not tricking Nixpacks into running one.
@@ -2155,10 +2155,10 @@ The user's underlying ask: why can't a plain PHP site work the way it does on He
 4. Open design question to resolve during planning: does this replace the PHP project type's behavior outright (auto-detected), or is it a separate mode/toggle? Lean toward auto-detected (mirrors the STATIC/REACT buildCmd-presence check) unless research turns up a reason users need to force one path or the other.
 
 **Acceptance Criteria:**
-- [ ] PHP project with no `composer.json` and no `buildCmd` deploys without any Nixpacks build step
-- [ ] PHP project with a `composer.json`/dependencies still builds via Nixpacks as today
-- [ ] A Duplicator-style migration package (arbitrary `.php` entry file + assets, no `composer.json`) deploys and runs correctly with zero manual intervention
-- [ ] Stopgap `composer.json` auto-injection in `cmd_build` is removed or demoted to a fallback
+- [x] PHP project with no `composer.json` and no `buildCmd` deploys without any Nixpacks build step
+- [x] PHP project with a `composer.json`/dependencies still builds via Nixpacks as today
+- [x] A Duplicator-style migration package (arbitrary `.php` entry file + assets, no `composer.json`) deploys and runs correctly with zero manual intervention
+- [x] Stopgap `composer.json` auto-injection in `cmd_build` is demoted to a fallback (only fires if a build is explicitly forced on a composer-less PHP project)
 
 **Test Plan:**
 1. Upload a single `index.php` with no `composer.json` → deploys in low single-digit seconds, no Nixpacks build logged
@@ -2221,6 +2221,46 @@ Surfaced while planning F5.18 (Audit Log): Vexlyx has no way to email its own pa
 
 **Developer Docs:**
 - **Location:** `docs/dev/system-transactional-email.md`
+
+---
+
+### F5.24 — File Manager: Permissions (chmod) & Archive Extract/Compress
+
+**Status:** 🔴 NOT STARTED
+
+**Description:**
+Surfaced directly while live-testing F5.21 against a real Duplicator (WordPress migration) package: Duplicator's own `installer.php` handles its archive's extraction internally, but the File Manager itself (`apps/api/src/modules/files/`, `FileManagerCard.tsx` / the standalone `/projects/[id]/files` page) has no way to extract an arbitrary uploaded `.zip`/`.tar.gz` on the server, or to change a file/folder's permissions. Confirmed by reading `apps/api/src/modules/files/routes.ts`: today's routes are `list`, `read`, `create`, `write`, `delete`, `rename`, `mkdir`, `copy`, `move`, `download`, `upload` — no `extract`/`compress`, no `chmod`. For any uploaded archive that *isn't* a self-extracting installer (a plain site backup `.zip`, a theme/plugin `.zip`, a Composer vendor dump, etc.) the only way to get its contents onto disk today is to unzip it locally first and re-upload every file individually. Permissions matter for the same class of workflow: some installers/frameworks expect a config file at `640`/`600` or a writable `storage/`/`uploads/` directory at `755`, and there's currently no way to fix that without shell access to the host.
+
+**Competitor research (2026):**
+- **cPanel**: File Manager natively supports Zip, gzipped tar (`.tar.gz`), and bzip2 tar (`.tar.bz2`) — both "Compress" and "Extract" are first-class toolbar actions. Permissions are editable per file/folder via a "Change Permissions" dialog (owner/group/other read/write/execute checkboxes, i.e. GUI chmod), though cPanel's own GUI does **not** support recursive chmod through a folder (that needs SSH/`chmod -R`). ([cPanel File Manager guide](https://cpanelreview.com/index.php/2026/04/30/cpanel-file-manager-complete-guide/), [InMotion: Change File Permissions in cPanel](https://www.inmotionhosting.com/support/edu/cpanel/change-file-permissions/))
+- **Plesk**: File Manager has both "Change Permissions" (full CHMOD editor: owner/group/other × read/write/execute) and archive handling — select an uploaded `.zip` and click "Extract Files"; select files/folders and click "Add to Archive" to compress. ([Plesk: Changing File and Directory Access Permissions](https://docs.plesk.com/en-US/obsidian/administrator-guide/website-management/websites-and-domains/website-content/changing-file-and-directory-access-permissions-in-file-manager.70738/), [Plesk: Working with Archive Files](https://docs.plesk.com/en-US/obsidian/extensions-guide/plesk-features-available-for-extensions/manage-files/working-with-archive-files.79667/))
+- **HestiaCP** (the reference panel F5.21 itself was benchmarked against): notably does **not** have a permissions/chmod option in its File Manager GUI at all — confirmed by multiple open forum threads of users asking for it. This is a real gap even in the "traditional panel" comparison class, not just a Vexlyx omission — worth building past it rather than matching it. ([Hestia forum: Change File and Folder Permissions through File Manager](https://forum.hestiacp.com/t/change-file-and-folder-permissions-through-file-manager/15789))
+- **CyberPanel**: recommends using its File Manager specifically to upload *and extract* archives, to avoid the file-ownership/permission mismatches that SFTP/SSH-based uploads can cause on a multi-tenant box — i.e. treats archive extraction as the safer default path, not an edge case. ([CyberPanel community: fixing permission/user-group problems](https://community.cyberpanel.net/t/tutorial-how-to-fix-permission-and-user-group-problem-on-cyberpanel/14138))
+- **CapRover / Coolify / Dokploy**: none of the three PaaS competitors ship a general-purpose file manager with chmod or archive support — deploys are git-push or image-based, not file-drop, so there's no real comparison point here. This reinforces that the right reference class for this feature is the traditional hosting panels above (cPanel/Plesk/HestiaCP/CyberPanel), same framing F5.21 itself used.
+
+**Proposed plan (for whoever picks this up):**
+1. **Permissions**: add `POST /api/files/:id/chmod` (`FileService.chmod(userId, projectId, path, mode, recursive?)`) using Node's built-in `fs.promises.chmod` — no new dependency needed. UI: a "Permissions" dialog off the file/folder context menu (owner/group/other × read/write/execute checkboxes, matching cPanel/Plesk's model) plus a raw octal input (`755`, `644`, etc.) for power users. Non-recursive by default; an explicit "Apply to contents" checkbox for folders, mirroring how cPanel/Plesk gate recursive chmod behind an extra confirmation since it's the more dangerous option.
+2. **Extract**: add `POST /api/files/:id/extract` (`.zip` at minimum; `.tar`/`.tar.gz` as a stretch goal) that unpacks an uploaded archive into the current directory (or a chosen destination) server-side.
+3. **Compress**: add `POST /api/files/:id/compress` to zip a selection of files/folders — useful for the export/backup half of the same workflow.
+4. **Open question needing user sign-off before implementation** (per CLAUDE.md §6, "no new dependencies without confirming"): extract/compress needs real zip handling, which Node's stdlib doesn't provide beyond gzip. Two reasonable paths — shell out to the host's `zip`/`unzip` CLI binaries (no new npm dependency, consistent with how `docker_manager.py`/`build_manager.py` already shell out to `docker`/`nixpacks`/`git`, but adds `zip`/`unzip` to the installer's prerequisite checks) vs. an npm package (`adm-zip`/`yazl`+`yauzl`/`archiver` — a genuinely new dependency). Lean toward shelling out, for consistency with the existing system-layer pattern, but this is exactly the kind of call CLAUDE.md says to confirm first rather than assume.
+5. Path-traversal safety matters more here than for existing routes: `extract` must resolve every entry inside the archive through the same `safePath` guard (`apps/api/src/modules/files/schema.ts`) already used elsewhere, rejecting any entry whose path would escape the project root (a malicious/zip-slip archive) — worth a dedicated test case, not just a general note.
+
+**Acceptance Criteria:**
+- [ ] File/folder permissions are viewable and editable from the File Manager UI (octal + checkbox editor), non-recursive by default
+- [ ] An uploaded `.zip` can be extracted into the current directory from the File Manager, with no shell/SSH access needed
+- [ ] A selection of files/folders can be compressed into a `.zip` from the File Manager
+- [ ] Archive extraction is hardened against zip-slip / path traversal (entries resolved through `safePath`, extraction rejected if any entry would land outside the project root)
+- [ ] No new dependency (npm package or system binary) is added without explicit user confirmation, per CLAUDE.md §6
+
+**Test Plan:**
+1. Upload a `.zip` containing a small site → Extract → files appear in the correct directory with correct contents
+2. Upload a deliberately malicious "zip-slip" archive (entries with `../../` paths) → extraction is rejected, nothing is written outside the project root
+3. Select several files/folders → Compress → resulting `.zip` downloads and contains exactly the selected content
+4. Set a file to `644` and a folder to `755` via the permissions dialog → confirm via `stat`/`ls -la` on the host that the mode actually changed
+5. Attempt a recursive chmod on a folder → requires the explicit "apply to contents" confirmation, doesn't silently recurse
+
+**Developer Docs:**
+- **Location:** `docs/dev/file-manager-permissions-archives.md`
 
 ---
 

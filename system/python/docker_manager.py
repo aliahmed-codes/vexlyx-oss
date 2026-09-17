@@ -211,16 +211,31 @@ def get_nginx_templates_dir() -> Path:
     return candidates[0]  # unreachable
 
 
-def primary_service_name(project_type: str) -> str:
+def primary_service_name(project_type: str, compose_dir: str | Path | None = None) -> str:
     """
     Return the Docker Compose service name that fronts HTTP traffic for a
     project type -- used by status/logs/container-id lookups (F5.7).
 
-    Every template has a single "app" service except WORDPRESS, which splits
-    into a PHP-FPM "app" service and an nginx "web" service; "web" is the one
-    that's actually reachable/healthy/Traefik-routed.
+    Most templates have a single "app" service. WORDPRESS always splits into
+    a PHP-FPM "app" service and an nginx "web" service. PHP does too, but
+    only for no-build deploys (F5.21) -- a Nixpacks-built PHP project is a
+    single "app" container. Since project_type alone can't disambiguate the
+    two PHP cases after the fact, inspect the already-generated compose file
+    for a top-level "web:" service key when compose_dir is available.
     """
-    return "web" if project_type.upper() == "WORDPRESS" else "app"
+    project_type_upper = project_type.upper()
+    if project_type_upper == "WORDPRESS":
+        return "web"
+    if project_type_upper == "PHP" and compose_dir:
+        compose_file = Path(compose_dir) / "docker-compose.yml"
+        if compose_file.is_file():
+            try:
+                content = compose_file.read_text(encoding="utf-8")
+            except OSError:
+                content = ""
+            if re.search(r"(?m)^\s{2}web:\s*$", content):
+                return "web"
+    return "app"
 
 
 def pick_template(project_type: str) -> str:
@@ -292,9 +307,19 @@ def generate_compose_file(
     (compose_dir / "docker-compose.yml").write_text(content, encoding="utf-8")
 
 
-def generate_nginx_conf(compose_dir: Path, template_path: Path) -> Path:
-    """Copy a nginx/*.conf.template into the project's deploy dir (F5.7)."""
+def generate_nginx_conf(
+    compose_dir: Path,
+    template_path: Path,
+    placeholders: dict[str, str] | None = None,
+) -> Path:
+    """Copy a nginx/*.conf.template into the project's deploy dir (F5.7),
+    substituting any {{placeholder}} tokens (F5.21 -- needed so each
+    project's nginx addresses its own container by its unique name rather
+    than the ambiguous, Compose-auto-aliased bare service name; see
+    app_upstream in cmd_deploy)."""
     content = template_path.read_text(encoding="utf-8")
+    for key, value in (placeholders or {}).items():
+        content = content.replace(f"{{{{{key}}}}}", value)
     compose_dir.mkdir(parents=True, exist_ok=True)
     dest = compose_dir / "nginx.conf"
     dest.write_text(content, encoding="utf-8")
@@ -307,7 +332,7 @@ def get_container_id(compose_dir: str, docker_bin: str, project_type: str = "NOD
         return None
 
     result = subprocess.run(
-        [docker_bin, "compose", "ps", "-q", primary_service_name(project_type)],
+        [docker_bin, "compose", "ps", "-q", primary_service_name(project_type, compose_dir)],
         cwd=compose_dir,
         capture_output=True,
         text=True,
@@ -374,6 +399,17 @@ def cmd_deploy(payload: dict) -> None:
     # Sanitize service name (Traefik router names must be alphanumeric + hyphens)
     service_name = slugify(project_id[:12])
 
+    # F5.21 fix: Compose auto-aliases a service by its bare name ("app") on
+    # every network it joins, including the shared external traefik-net --
+    # so with 2+ two-container (app+web) projects deployed at once, "app"
+    # resolves ambiguously and nginx can randomly proxy PHP requests to a
+    # DIFFERENT project's php-fpm container. Confirmed live: two no-build PHP
+    # deploys on the same host caused requests to alternate between the two
+    # projects' "app" containers. Compose's default container-naming scheme
+    # (<compose-project-name>-<service>-<replica>) is unique per project, so
+    # nginx must address that instead of the bare service name.
+    app_upstream = f"vexlyx-{service_name}-app-1"
+
     # Resolve template
     templates_dir = get_templates_dir()
     template_file = templates_dir / pick_template(project_type)
@@ -396,7 +432,9 @@ def cmd_deploy(payload: dict) -> None:
     # F5.7 — WORDPRESS: generate fastcgi nginx config + map DB_* env vars to WORDPRESS_DB_*
     if project_type_upper == "WORDPRESS":
         nginx_conf_path = generate_nginx_conf(
-            compose_dir, get_nginx_templates_dir() / "wordpress.conf.template"
+            compose_dir,
+            get_nginx_templates_dir() / "wordpress.conf.template",
+            {"app_upstream": app_upstream},
         )
         extra_placeholders["nginx_conf_path"] = nginx_conf_path.resolve().as_posix()
         extra_placeholders["wp_db_host"] = env_vars.get("DB_HOST", "")
@@ -404,6 +442,25 @@ def cmd_deploy(payload: dict) -> None:
         extra_placeholders["wp_db_user"] = env_vars.get("DB_USER", "")
         extra_placeholders["wp_db_password"] = env_vars.get("DB_PASSWORD", "")
         extra_placeholders["wp_db_prefix"] = env_vars.get("DB_PREFIX", "wp_")
+
+    # F5.21 — PHP with no composer.json/buildCmd: the API service signals this
+    # by passing staticRoot (same convention as STATIC/REACT no-build) instead
+    # of leaving it unset for a Nixpacks-built PHP deploy. Swap in the
+    # two-container php-no-build.yml template + a generic PHP-FPM nginx config.
+    php_no_build = project_type_upper == "PHP" and bool(payload.get("staticRoot"))
+    if php_no_build:
+        template_file = templates_dir / "php-no-build.yml"
+        if not template_file.is_file():
+            fail(f"Template not found: {template_file}", "TEMPLATE_NOT_FOUND")
+        php_root = payload.get("staticRoot") or project_dir
+        extra_placeholders["php_root"] = Path(php_root).resolve().as_posix()
+        extra_placeholders["php_fpm_image"] = payload.get("phpFpmImage") or "vexlyx-php-fpm:8.3"
+        nginx_conf_path = generate_nginx_conf(
+            compose_dir,
+            get_nginx_templates_dir() / "php.conf.template",
+            {"app_upstream": app_upstream},
+        )
+        extra_placeholders["nginx_conf_path"] = nginx_conf_path.resolve().as_posix()
 
     log_line(f"[vexlyx] Generating docker-compose.yml in {compose_dir}")
     generate_compose_file(
@@ -519,7 +576,7 @@ def cmd_logs(payload: dict) -> None:
         return
 
     result = subprocess.run(
-        [docker_bin, "compose", "logs", f"--tail={tail}", "--no-log-prefix", primary_service_name(project_type)],
+        [docker_bin, "compose", "logs", f"--tail={tail}", "--no-log-prefix", primary_service_name(project_type, compose_dir)],
         cwd=compose_dir,
         capture_output=True,
         text=True,
@@ -712,7 +769,7 @@ def cmd_logs_follow(payload: dict) -> None:
         return
 
     proc = subprocess.Popen(
-        [docker_bin, "compose", "logs", "--follow", f"--tail={tail}", "--no-log-prefix", primary_service_name(project_type)],
+        [docker_bin, "compose", "logs", "--follow", f"--tail={tail}", "--no-log-prefix", primary_service_name(project_type, compose_dir)],
         cwd=compose_dir,
         stdout=subprocess.PIPE,
         stderr=subprocess.STDOUT,

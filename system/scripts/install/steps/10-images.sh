@@ -16,4 +16,9 @@ COMPOSE=(docker compose --env-file "${VEXLYX_SECRETS_FILE}" -f docker-compose.ym
 # compose service -- built directly so `docker run` can find it by tag.
 docker build -t vexlyx-ufw-helper:latest docker/ufw-helper
 
+# vexlyx-php-fpm (F5.21) -- fixed PHP-FPM image (with common extensions
+# baked in) that no-build PHP projects deploy against instead of running a
+# per-project Nixpacks build. See system/templates/docker-compose/php-no-build.yml.
+docker build -t vexlyx-php-fpm:8.3 docker/php-fpm
+
 log_ok "Panel images built."
