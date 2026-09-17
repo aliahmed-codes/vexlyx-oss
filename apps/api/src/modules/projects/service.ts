@@ -1,6 +1,12 @@
+import { existsSync } from "node:fs";
+import fs from "node:fs/promises";
+import { resolve } from "node:path";
 import type { PrismaClient } from "@prisma/client";
+import type { FastifyBaseLogger } from "fastify";
 import type { CreateProjectInput, UpdateProjectInput, ProjectListQuery } from "./schema.js";
 import { assertUnderQuota } from "../../utils/quota.js";
+import { env } from "../../config/env.js";
+import { runDockerAction } from "../deploy/service.js";
 import type { AuditLogService } from "../audit-log/service.js";
 
 // ---------------------------------------------------------------------------
@@ -50,7 +56,31 @@ export class ProjectService {
   constructor(
     private prisma: PrismaClient,
     private auditLog: AuditLogService,
+    private logger: FastifyBaseLogger,
   ) {}
+
+  // Stops/removes a project's Docker containers and deletes its workspace
+  // directory. Soft-deleting a project previously left both running
+  // forever — the DB row said DELETED but nothing ever tore down the
+  // containers or files, and once a same-named project got created/renamed
+  // in later, the old row was hard-deleted to free the name, leaving a
+  // container pair with zero trace in the database (found live: two no-build
+  // PHP projects both claiming the "app"/"web" Compose aliases on the shared
+  // traefik-net, see docs/dev/no-build-php-hosting.md). Docker failures are
+  // logged but don't block the delete -- a project stuck on a broken
+  // container shouldn't become permanently undeletable.
+  private async teardownWorkspace(projectId: string): Promise<void> {
+    const projectDir = resolve(env.PROJECTS_DIR, projectId);
+    if (!existsSync(projectDir)) return;
+
+    try {
+      await runDockerAction("remove", projectDir);
+    } catch (err) {
+      this.logger.error({ projectId, err }, "Failed to remove project containers during delete");
+    }
+
+    await fs.rm(projectDir, { recursive: true, force: true });
+  }
 
   async list(userId: string, query: ProjectListQuery) {
     const { page, limit, type, status, search } = query;
@@ -134,7 +164,11 @@ export class ProjectService {
         );
       }
 
-      // If an old soft-deleted project occupied this name, remove it to allow re-creation
+      // If an old soft-deleted project occupied this name, tear down its
+      // containers/files (in case its own soft-delete never did, e.g. a
+      // pre-existing project from before this cleanup existed) before
+      // removing it to allow re-creation.
+      await this.teardownWorkspace(existing.id);
       await this.prisma.project.delete({
         where: { id: existing.id },
       });
@@ -198,7 +232,9 @@ export class ProjectService {
             409,
           );
         }
-        // If colliding record was soft-deleted, clean it up
+        // If colliding record was soft-deleted, tear down its
+        // containers/files (see teardownWorkspace) before removing it.
+        await this.teardownWorkspace(collision.id);
         await this.prisma.project.delete({
           where: { id: collision.id },
         });
@@ -248,6 +284,8 @@ export class ProjectService {
         deletedAt: new Date(),
       },
     });
+
+    await this.teardownWorkspace(projectId);
 
     await this.auditLog.log(userId, "project.deleted", { type: "Project", id: projectId }, {
       before: { name: project.name, type: project.type },

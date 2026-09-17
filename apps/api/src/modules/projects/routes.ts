@@ -25,7 +25,7 @@ function handleProjectError(err: unknown, reply: FastifyReply): void {
 
 export async function projectRoutes(app: FastifyInstance) {
   const auditLog = new AuditLogService(app.prisma, app.log);
-  const service = new ProjectService(app.prisma, auditLog);
+  const service = new ProjectService(app.prisma, auditLog, app.log);
 
   // ---------------------------------------------------------------------------
   // GET /api/projects — list user's projects with offset pagination
