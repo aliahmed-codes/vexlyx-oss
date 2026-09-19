@@ -2313,6 +2313,28 @@ Follow-up to F5.25. Mail (F4.5) still wrote MX/SPF/DMARC/DKIM `DnsRecord` rows f
 
 ---
 
+### F5.27 — Public Authoritative DNS & Zero-Downtime Nameserver Migration
+**Status:** 🟢 COMPLETED
+
+**Description:**
+Hosted DNS (F5.25) could not actually serve the internet: CoreDNS was bound to loopback and its Corefile forwards unmatched queries, so exposing it would create an open resolver. Managed zones also seeded their default A record from an unset `SERVER_IP`, giving `127.0.0.1`. And a live domain had a gap between switching nameservers and the zone existing, because hosting could only be enabled after delegation.
+
+**Acceptance Criteria:**
+- [x] `docker/coredns/Corefile.public`: authoritative-only (no `forward`), selectable via `VEXLYX_COREFILE`; bind address selectable via `VEXLYX_DNS_BIND` (default stays loopback)
+- [x] Nameservers configurable via `DNS_NAMESERVERS`, passed through `docker-compose.prod.yml`
+- [x] Default records use `PUBLIC_IP` (falling back to `SERVER_IP`) instead of `127.0.0.1`
+- [x] "Prepare zone before switching" (`skipDelegationCheck`): load and test the zone before changing nameservers; still requires a verified domain
+- [x] Managed domains not yet delegated show a "Not live yet" banner with the nameservers to set
+
+**Test Plan:**
+1. Enable hosting with `VEXLYX_DNS_BIND`/`VEXLYX_COREFILE` set; `dig @<server-ip> example.com` answers, `dig @<server-ip> google.com` is refused
+2. Prepare the zone on a live domain, verify records with `dig @<server-ip>`, then switch nameservers at the registrar
+
+**Developer Docs:**
+- **Location:** `docs/dev/dns-management.md` (§9, "Public authoritative DNS")
+
+---
+
 ## Phase 6: Ecosystem & Launch
 
 ### F6.1 — Complete Documentation

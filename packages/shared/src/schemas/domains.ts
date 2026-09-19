@@ -12,6 +12,9 @@ export type DnsMode = z.infer<typeof DnsModeSchema>;
 
 export const SetDnsModeSchema = z.object({
   mode: DnsModeSchema,
+  // Load the zone before nameservers are switched, so a live domain has no
+  // gap between delegation and the zone existing (F5.27).
+  skipDelegationCheck: z.boolean().optional(),
 });
 export type SetDnsModeInput = z.infer<typeof SetDnsModeSchema>;
 

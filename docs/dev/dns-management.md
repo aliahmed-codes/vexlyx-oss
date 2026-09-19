@@ -221,3 +221,12 @@ F5.22 above was labeling only. As of F5.25 each domain has a `dnsMode`:
 - **Switching back** removes the zone file but keeps `DnsRecord` rows, so re-enabling is lossless. It is blocked (409 `DNS_MODE_MAIL_ACTIVE`) while the domain has mailboxes, since their MX/SPF/DKIM records live in the zone.
 - Subdomains inherit the parent's mode on creation. Existing domains were backfilled by the `add_domain_dns_mode` migration: `MANAGED` if they had any record beyond the `_vexlyx-challenge` TXT, else `CONNECTED`.
 - Testing: with `NODE_ENV=test` or `VEXLYX_MOCK_DNS=true` the delegation check reports delegated; verify a domain with `POST /:id/verify?mock=true` first.
+
+### F5.27: serving DNS publicly and migrating a live domain
+
+To be a real nameserver the server must answer on a public address without becoming an open resolver:
+
+1. In `/etc/vexlyx/vexlyx.env` set `VEXLYX_DNS_BIND=<host private IP>` (not `0.0.0.0`: systemd-resolved holds `127.0.0.53:53`), `VEXLYX_COREFILE=./docker/coredns/Corefile.public` (authoritative-only, no `forward`) and `DNS_NAMESERVERS=ns1.<yourdomain>,ns2.<yourdomain>`.
+2. Create A records for those nameserver names pointing at the server's public IP, open UDP+TCP 53 in the cloud firewall and `ufw`, then `docker compose ... up -d coredns api`.
+3. Migrating a live domain: verify ownership, use **Prepare zone before switching** (`PATCH /dns-mode` with `skipDelegationCheck: true`), recreate the domain's existing records in the zone, confirm with `dig @<server-ip> <domain>`, and only then change the registrar's nameservers. Until delegation passes, the DNS page shows a "Not live yet" banner.
+

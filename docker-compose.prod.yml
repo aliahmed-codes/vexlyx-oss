@@ -51,14 +51,19 @@ services:
       - /var/run/docker.sock:/var/run/docker.sock:ro
 
   coredns:
-    # Loopback-only by default: docker/coredns/Corefile forwards unmatched
-    # queries to public resolvers, so publishing this on 0.0.0.0 would stand
-    # up an open recursive resolver. Operators who want this server to be a
-    # public authoritative nameserver for their zones need to change this
-    # binding themselves — see docs/dev/installer.md.
+    # Loopback-only with the forwarding Corefile by default: that Corefile
+    # forwards unmatched queries to public resolvers, so publishing it on a
+    # public address would stand up an open recursive resolver.
+    # To make this server a public authoritative nameserver (F5.27), set in
+    # /etc/vexlyx/vexlyx.env:
+    #   VEXLYX_DNS_BIND=<this host's private IP>   (not 0.0.0.0 — systemd-resolved holds 127.0.0.53:53)
+    #   VEXLYX_COREFILE=./docker/coredns/Corefile.public   (no forwarding)
     ports: !override
-      - "127.0.0.1:${DNS_PORT:-53}:53/udp"
-      - "127.0.0.1:${DNS_PORT:-53}:53/tcp"
+      - "${VEXLYX_DNS_BIND:-127.0.0.1}:${DNS_PORT:-53}:53/udp"
+      - "${VEXLYX_DNS_BIND:-127.0.0.1}:${DNS_PORT:-53}:53/tcp"
+    volumes: !override
+      - ${VEXLYX_COREFILE:-./docker/coredns/Corefile}:/etc/coredns/Corefile:ro
+      - ./docker/coredns/zones:/etc/coredns/zones:ro
 
   postfix:
     environment:
@@ -153,6 +158,8 @@ services:
       # DNS Records & Public IP Onboarding (F5.9)
       PANEL_DOMAIN: ${VEXLYX_DOMAIN}
       PUBLIC_IP: ${VEXLYX_PUBLIC_IP:-}
+      # Nameservers users delegate to for hosted DNS (F5.25/F5.27)
+      DNS_NAMESERVERS: ${DNS_NAMESERVERS:-ns1.vexlyx.com,ns2.vexlyx.com}
       POSTGRES_HOST: postgres
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
       MYSQL_HOST: mysql

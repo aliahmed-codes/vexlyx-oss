@@ -24,6 +24,7 @@ import type {
 } from "@vexlyx/shared";
 import { env } from "../../config/env.js";
 import { DnsService } from "../domains/dns-service.js";
+import { getServerIp } from "../domains/resolvers.js";
 import {
   buildRequiredMailRecords,
   isRecordLive,
@@ -312,7 +313,7 @@ export class MailService {
 
     const required = buildRequiredMailRecords(
       domain.hostname,
-      process.env.SERVER_IP || env.PUBLIC_IP || "127.0.0.1",
+      getServerIp(),
       dkimValue ? { selector: activeSelector, value: dkimValue } : undefined,
     );
     const live = await lookupLiveMailRecords(domain.hostname, required);

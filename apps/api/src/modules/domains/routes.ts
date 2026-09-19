@@ -81,8 +81,8 @@ export async function domainRoutes(app: FastifyInstance) {
     async (request, reply) => {
       try {
         const { id } = DomainIdParamSchema.parse(request.params);
-        const { mode } = SetDnsModeSchema.parse(request.body);
-        const domain = await dnsService.setDnsMode(request.userId!, id, mode);
+        const { mode, skipDelegationCheck } = SetDnsModeSchema.parse(request.body);
+        const domain = await dnsService.setDnsMode(request.userId!, id, mode, skipDelegationCheck);
         await auditLog.log(request.userId!, "domain.dns_mode_changed", { type: "Domain", id }, {
           after: { dnsMode: domain.dnsMode },
         });

@@ -1,0 +1,15 @@
+# Authoritative-only Corefile for a publicly reachable nameserver (F5.27).
+# Unlike ./Corefile this has NO `forward`, so exposing it on a public address
+# cannot turn the server into an open recursive resolver: it only answers for
+# zones present in /etc/coredns/zones and refuses everything else.
+.:53 {
+    auto {
+        directory /etc/coredns/zones (.*)\.db {1}
+        reload 5s
+    }
+
+    cache 30
+
+    log
+    errors
+}

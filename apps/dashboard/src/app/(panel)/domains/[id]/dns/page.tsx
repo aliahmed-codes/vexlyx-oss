@@ -543,6 +543,15 @@ export default function DomainDnsPage() {
         </div>
       </div>
 
+      {delegation && !delegation.delegated && (
+        <div className="rounded-lg border border-amber-500/20 bg-amber-500/5 p-4 text-xs text-amber-700 dark:text-amber-400">
+          <span className="font-medium">Not live yet.</span> Nameservers for {domain.hostname} still
+          point at {delegation.found.length > 0 ? delegation.found.join(", ") : "another provider"}.
+          Records below are served only after you set your registrar&rsquo;s nameservers to{" "}
+          <span className="font-mono">{delegation.expected.join(", ")}</span>.
+        </div>
+      )}
+
       {/* ----------------------------------------------------------------- */}
       {/* Hosting status + opt-out */}
       {/* ----------------------------------------------------------------- */}

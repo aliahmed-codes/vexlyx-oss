@@ -54,6 +54,16 @@ export function DnsHostingOptIn({ domain, onEnabled }: DnsHostingOptInProps) {
     }
   };
 
+  const handlePrepare = async () => {
+    try {
+      await setMode("MANAGED", true);
+      toast.success("Zone prepared. Switch your nameservers when you're ready.");
+      onEnabled();
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Failed to prepare the DNS zone");
+    }
+  };
+
   return (
     <div className="space-y-6 pb-12">
       <div className="flex items-center gap-2 text-xs text-muted-foreground">
@@ -165,6 +175,19 @@ export function DnsHostingOptIn({ domain, onEnabled }: DnsHostingOptInProps) {
             >
               {isSwitching && <Loader2 className="mr-1.5 h-3.5 w-3.5 animate-spin" />}
               Enable DNS hosting
+            </Button>
+            <p className="text-xs text-muted-foreground leading-relaxed">
+              Moving a live site or mail? Prepare the zone first: load and check your records here
+              before you change nameservers, so nothing goes down during the switch.
+            </p>
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => void handlePrepare()}
+              disabled={!isVerified || isSwitching}
+              className="h-8 text-xs"
+            >
+              Prepare zone before switching
             </Button>
           </div>
         </CardContent>

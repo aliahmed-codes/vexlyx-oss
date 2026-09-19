@@ -30,13 +30,13 @@ export function useDnsMode(domainId?: string) {
     });
   }, [checkDelegation]);
 
-  const setMode = async (mode: DnsMode): Promise<void> => {
+  const setMode = async (mode: DnsMode, skipDelegationCheck = false): Promise<void> => {
     if (!domainId) throw new Error("No domain selected");
     setIsSwitching(true);
     try {
       await fetchAPI(`/api/domains/${domainId}/dns-mode`, {
         method: "PATCH",
-        body: JSON.stringify({ mode }),
+        body: JSON.stringify({ mode, skipDelegationCheck }),
       });
     } finally {
       setIsSwitching(false);

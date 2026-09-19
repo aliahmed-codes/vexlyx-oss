@@ -18,7 +18,7 @@ import type {
 } from "@vexlyx/shared";
 import { env } from "../../config/env.js";
 import { DomainError } from "./service.js";
-import { PUBLIC_RESOLVER_IPS } from "./resolvers.js";
+import { PUBLIC_RESOLVER_IPS, getServerIp } from "./resolvers.js";
 import { buildRequiredMailRecords } from "../mail/required-records.js";
 
 // ---------------------------------------------------------------------------
@@ -231,7 +231,7 @@ export class DnsService {
    */
   async initializeDefaultRecords(userId: string, domainId: string): Promise<DnsRecordResponse[]> {
     const domain = await this.getDomainOrThrow(userId, domainId);
-    const serverIp = process.env.SERVER_IP || "127.0.0.1";
+    const serverIp = getServerIp();
 
     const defaults: Array<{
       type: DnsRecordType;
@@ -285,7 +285,7 @@ export class DnsService {
     // to them (see mail/required-records.ts), never written to a zone we don't serve.
     if (domain.dnsMode !== "MANAGED") return [];
 
-    const serverIp = process.env.SERVER_IP || "127.0.0.1";
+    const serverIp = getServerIp();
     const required = buildRequiredMailRecords(domain.hostname, serverIp);
     const valueOf = (purpose: string) => required.find((r) => r.purpose === purpose)?.value ?? "";
 
@@ -600,7 +600,12 @@ export class DnsService {
    * whose nameservers are already delegated to us; disabling is blocked while the
    * domain has mailboxes, since their MX/DKIM/SPF records live in the zone.
    */
-  async setDnsMode(userId: string, domainId: string, mode: DnsMode): Promise<Domain> {
+  async setDnsMode(
+    userId: string,
+    domainId: string,
+    mode: DnsMode,
+    skipDelegationCheck = false,
+  ): Promise<Domain> {
     const domain = await this.getDomainOrThrow(userId, domainId);
     if (domain.dnsMode === mode) return domain;
 
@@ -612,7 +617,9 @@ export class DnsService {
           409,
         );
       }
-      const delegation = await this.checkDelegation(userId, domainId);
+      const delegation = skipDelegationCheck
+        ? { delegated: true, found: [], expected: env.DNS_NAMESERVERS }
+        : await this.checkDelegation(userId, domainId);
       if (!delegation.delegated) {
         throw new DomainError(
           `Nameservers are not pointed at ${delegation.expected.join(", ")} yet`,
