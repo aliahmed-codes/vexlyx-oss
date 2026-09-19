@@ -20,9 +20,15 @@ import type {
   DkimKey,
   DkimRotateResponse,
   WebmailActivityResponse,
+  RequiredMailRecordResponse,
 } from "@vexlyx/shared";
 import { env } from "../../config/env.js";
 import { DnsService } from "../domains/dns-service.js";
+import {
+  buildRequiredMailRecords,
+  isRecordLive,
+  lookupLiveMailRecords,
+} from "./required-records.js";
 
 export class MailError extends Error {
   constructor(
@@ -285,6 +291,38 @@ export class MailService {
   }
 
   /**
+   * Picks the records the deliverability scorecard is computed from. MANAGED
+   * domains use their own DnsRecord rows; CONNECTED domains have no zone here,
+   * so their scorecard comes from live public DNS and they get the list of
+   * records to publish at their registrar (F5.26).
+   */
+  private async resolveAuthRecords(
+    domain: {
+      hostname: string;
+      dnsMode: "CONNECTED" | "MANAGED";
+      dnsRecords: Array<{ type: string; name: string; value: string; priority: number | null }>;
+    },
+    activeSelector: string,
+    dkimValue: string | undefined,
+  ): Promise<{
+    records: Array<{ type: string; name: string; value: string; priority: number | null }>;
+    requiredRecords?: RequiredMailRecordResponse[];
+  }> {
+    if (domain.dnsMode === "MANAGED") return { records: domain.dnsRecords };
+
+    const required = buildRequiredMailRecords(
+      domain.hostname,
+      process.env.SERVER_IP || env.PUBLIC_IP || "127.0.0.1",
+      dkimValue ? { selector: activeSelector, value: dkimValue } : undefined,
+    );
+    const live = await lookupLiveMailRecords(domain.hostname, required);
+    return {
+      records: live,
+      requiredRecords: required.map((r) => ({ ...r, live: isRecordLive(r, live) })),
+    };
+  }
+
+  /**
    * Retrieves all virtual domains for a user, checking their DKIM signing keys and DNS setup.
    */
   async listVirtualDomains(userId: string): Promise<VirtualDomain[]> {
@@ -332,16 +370,23 @@ export class MailService {
         publicKey: string;
       }>("get_dkim", { domain: d.hostname, selector: activeSelector });
 
-      const hasDnsTxt = d.dnsRecords.some(
+      const { records, requiredRecords } = await this.resolveAuthRecords(
+        d,
+        activeSelector,
+        dkim.found ? dkim.dnsRecordValue : undefined,
+      );
+      const hasDnsTxt = records.some(
         (r) => r.type === "TXT" && r.name === `${activeSelector}._domainkey`,
       );
 
-      const { checks, score, grade } = this.computeAuthChecks(d.dnsRecords, activeSelector);
+      const { checks, score, grade } = this.computeAuthChecks(records, activeSelector);
 
       result.push({
         domainId: d.id,
         hostname: d.hostname,
         status: d.status,
+        dnsMode: d.dnsMode,
+        requiredRecords,
         dkimEnabled: dkim.found,
         dkimRecord: dkim.found
           ? {
@@ -370,8 +415,9 @@ export class MailService {
   /**
    * Pure, I/O-free computation of the F4.5 internal-only deliverability
    * scorecard from an already-fetched set of DNS records. No external DNS
-   * lookups or third-party API calls are made — this only inspects Vexlyx's
-   * own DnsRecord rows.
+   * lookups or third-party API calls are made — callers pass in either
+   * Vexlyx's own DnsRecord rows (MANAGED) or already-resolved live records
+   * (CONNECTED, see resolveAuthRecords).
    */
   private computeAuthChecks(
     dnsRecords: Array<{ type: string; name: string; value: string; priority: number | null }>,
@@ -451,14 +497,27 @@ export class MailService {
       select: { selector: true },
     });
 
-    const { checks, score, grade } = this.computeAuthChecks(
-      domain.dnsRecords,
-      activeDkimKey?.selector ?? "default",
+    const selector = activeDkimKey?.selector ?? "default";
+    const dkim =
+      domain.dnsMode === "CONNECTED"
+        ? await runPostfixManager<{ found: boolean; dnsRecordValue: string }>("get_dkim", {
+            domain: domain.hostname,
+            selector,
+          })
+        : undefined;
+
+    const { records, requiredRecords } = await this.resolveAuthRecords(
+      domain,
+      selector,
+      dkim?.found ? dkim.dnsRecordValue : undefined,
     );
+    const { checks, score, grade } = this.computeAuthChecks(records, selector);
 
     return {
       domainId: domain.id,
       hostname: domain.hostname,
+      dnsMode: domain.dnsMode,
+      requiredRecords,
       spfConfigured: checks.spf.pass,
       dkimConfigured: checks.dkim.pass,
       dmarcConfigured: checks.dmarc.pass,
@@ -562,7 +621,14 @@ export class MailService {
       (r) => r.type === "TXT" && r.name === "default._domainkey",
     );
 
-    if (existingDns) {
+    if (domain.dnsMode === "CONNECTED") {
+      // The user publishes this at their registrar; report what public DNS serves.
+      const required = buildRequiredMailRecords(domain.hostname, "127.0.0.1", {
+        selector: dkimRes.selector,
+        value: dkimRes.dnsRecordValue,
+      }).filter((r) => r.purpose === "DKIM");
+      inDns = (await lookupLiveMailRecords(domain.hostname, required)).length > 0;
+    } else if (existingDns) {
       inDns = true;
     } else if (autoAddToDns) {
       // Auto-insert DKIM TXT record into Vexlyx DNS
@@ -732,17 +798,21 @@ export class MailService {
     ]);
 
     // Publish the new selector's TXT record to DNS — never touches the
-    // retiring selector's existing record.
-    await this.prisma.dnsRecord.create({
-      data: {
-        type: "TXT",
-        name: `${rotateRes.newSelector}._domainkey`,
-        value: `"${rotateRes.newDnsRecordValue}"`,
-        ttl: 3600,
-        domainId,
-      },
-    });
-    await this.dnsService.syncZoneFile(domain.hostname, domain.id);
+    // retiring selector's existing record. CONNECTED domains have no zone here:
+    // the user adds the new record at their registrar (newKey.inDns stays false).
+    const isManaged = domain.dnsMode === "MANAGED";
+    if (isManaged) {
+      await this.prisma.dnsRecord.create({
+        data: {
+          type: "TXT",
+          name: `${rotateRes.newSelector}._domainkey`,
+          value: `"${rotateRes.newDnsRecordValue}"`,
+          ttl: 3600,
+          domainId,
+        },
+      });
+      await this.dnsService.syncZoneFile(domain.hostname, domain.id);
+    }
 
     const keys = await this.prisma.dkimKey.findMany({
       where: { domainId },
@@ -758,7 +828,7 @@ export class MailService {
         dnsRecordValue: rotateRes.newDnsRecordValue,
         publicKey: rotateRes.newPublicKey,
         keyLength: rotateRes.keyLength,
-        inDns: true,
+        inDns: isManaged,
       },
       retiringKey: {
         selector: rotateRes.oldSelector,

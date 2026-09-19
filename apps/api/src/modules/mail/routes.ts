@@ -111,6 +111,23 @@ export async function mailRoutes(app: FastifyInstance) {
   );
 
   // ---------------------------------------------------------------------------
+  // POST /api/mail/auth/:domainId/check — Re-check deliverability (live DNS for CONNECTED domains)
+  // ---------------------------------------------------------------------------
+  app.post(
+    "/auth/:domainId/check",
+    { preHandler: [app.requireAuth] },
+    async (request, reply) => {
+      try {
+        const { domainId } = MailDomainParamSchema.parse(request.params);
+        const result = await service.getMailAuthStatus(request.userId!, domainId);
+        return reply.status(200).send(result);
+      } catch (err) {
+        handleMailError(err, reply);
+      }
+    },
+  );
+
+  // ---------------------------------------------------------------------------
   // POST /api/mail/test-send — Send test email with TLS handshake verification
   // ---------------------------------------------------------------------------
   app.post(

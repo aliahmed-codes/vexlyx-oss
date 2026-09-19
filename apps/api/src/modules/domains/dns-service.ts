@@ -18,8 +18,8 @@ import type {
 } from "@vexlyx/shared";
 import { env } from "../../config/env.js";
 import { DomainError } from "./service.js";
-
-const PUBLIC_RESOLVER_IPS = ["1.1.1.1", "8.8.8.8", "9.9.9.9"];
+import { PUBLIC_RESOLVER_IPS } from "./resolvers.js";
+import { buildRequiredMailRecords } from "../mail/required-records.js";
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -281,7 +281,13 @@ export class DnsService {
    */
   async initializeEmailAuthRecords(userId: string, domainId: string): Promise<DnsRecordResponse[]> {
     const domain = await this.getDomainOrThrow(userId, domainId);
+    // CONNECTED domains keep DNS at the user's registrar — mail records are shown
+    // to them (see mail/required-records.ts), never written to a zone we don't serve.
+    if (domain.dnsMode !== "MANAGED") return [];
+
     const serverIp = process.env.SERVER_IP || "127.0.0.1";
+    const required = buildRequiredMailRecords(domain.hostname, serverIp);
+    const valueOf = (purpose: string) => required.find((r) => r.purpose === purpose)?.value ?? "";
 
     const defaults: Array<{
       type: DnsRecordType;
@@ -295,7 +301,7 @@ export class DnsService {
       {
         type: "TXT",
         name: "@",
-        value: `v=spf1 mx a ip4:${serverIp} ~all`,
+        value: valueOf("SPF"),
         ttl: 3600,
         // Other unrelated TXT records may already exist at "@", so SPF is
         // identified by its "v=spf1" prefix rather than name alone.
@@ -307,7 +313,7 @@ export class DnsService {
       {
         type: "TXT",
         name: "_dmarc",
-        value: `v=DMARC1; p=none; rua=mailto:postmaster@${domain.hostname}; pct=100`,
+        value: valueOf("DMARC"),
         ttl: 3600,
         exists: async () =>
           !!(await this.prisma.dnsRecord.findFirst({
@@ -317,7 +323,7 @@ export class DnsService {
       {
         type: "MX",
         name: "@",
-        value: `mail.${domain.hostname}`,
+        value: valueOf("MX"),
         ttl: 3600,
         priority: 10,
         exists: async () =>

@@ -50,21 +50,22 @@ class TestMailAuthApiSecurity(unittest.TestCase):
     """Verifies the new F4.5 endpoint enforces authentication."""
 
     def test_01_unauthenticated_regenerate_returns_401(self):
-        req = urllib.request.Request(
-            f"{API_BASE_URL}/api/mail/auth/dummy-id/regenerate",
-            data=b"{}",
-            method="POST",
-        )
-        req.add_header("Content-Type", "application/json")
+        for action in ("regenerate", "check"):
+            req = urllib.request.Request(
+                f"{API_BASE_URL}/api/mail/auth/dummy-id/{action}",
+                data=b"{}",
+                method="POST",
+            )
+            req.add_header("Content-Type", "application/json")
 
-        try:
-            with urllib.request.urlopen(req) as resp:
-                self.fail(f"Expected 401 Unauthorized, got {resp.status}")
-        except urllib.error.HTTPError as e:
-            self.assertEqual(e.code, 401)
-        except urllib.error.URLError:
-            # If the API server is not running during an isolated test run, skip the live assertion.
-            pass
+            try:
+                with urllib.request.urlopen(req) as resp:
+                    self.fail(f"Expected 401 Unauthorized for {action}, got {resp.status}")
+            except urllib.error.HTTPError as e:
+                self.assertEqual(e.code, 401)
+            except urllib.error.URLError:
+                # If the API server is not running during an isolated test run, skip the live assertion.
+                break
 
 
 class TestMailAuthLiveEndToEnd(unittest.TestCase):
@@ -156,6 +157,30 @@ class TestMailAuthLiveEndToEnd(unittest.TestCase):
         self.assertFalse(domain["dmarcConfigured"])
         self.assertFalse(domain["mxConfigured"])
         self.assertFalse(domain["dkimEnabled"])
+
+    def test_connected_domain_lists_registrar_records_and_writes_no_zone(self):
+        """F5.26: a CONNECTED domain gets records to publish at its registrar, not a zone."""
+        hostname = f"test-connected-{uuid.uuid4().hex[:8]}.org"
+        connected = self._post(f"{API_BASE_URL}/api/domains", {"hostname": hostname})
+        connected_id = connected["id"]
+        try:
+            self._post(f"{API_BASE_URL}/api/mail/dkim/{connected_id}")
+            entry = next(
+                d for d in self._get(f"{API_BASE_URL}/api/mail/domains")["domains"]
+                if d["domainId"] == connected_id
+            )
+            self.assertEqual(entry["dnsMode"], "CONNECTED")
+            purposes = {r["purpose"] for r in entry["requiredRecords"]}
+            self.assertEqual(purposes, {"MX", "SPF", "DMARC", "DKIM"})
+
+            with self.assertRaises(urllib.error.HTTPError) as ctx:
+                self._get(f"{API_BASE_URL}/api/domains/{connected_id}/dns")
+            self.assertEqual(ctx.exception.code, 409)
+
+            status = self._post(f"{API_BASE_URL}/api/mail/auth/{connected_id}/check")
+            self.assertEqual(status["dnsMode"], "CONNECTED")
+        finally:
+            self._delete(f"{API_BASE_URL}/api/domains/{connected_id}")
 
     def test_02_first_mailbox_triggers_full_auto_configuration(self):
         self._create_mailbox("first")

@@ -22,6 +22,7 @@ import type {
 import { env } from "../../config/env.js";
 import { assertUnderQuota } from "../../utils/quota.js";
 import type { AuditLogService } from "../audit-log/service.js";
+import { PUBLIC_RESOLVER_IPS } from "./resolvers.js";
 
 // ---------------------------------------------------------------------------
 // Error Handling
@@ -650,8 +651,6 @@ http:
       // TTL (up to an hour, per its SOA). Any one public resolver actually
       // seeing the record is solid evidence it's live — no need for all of
       // them to agree before activating the domain.
-      const PUBLIC_RESOLVER_IPS = ["1.1.1.1", "8.8.8.8", "9.9.9.9"];
-
       for (const target of targets) {
         for (const resolverIp of PUBLIC_RESOLVER_IPS) {
           try {

@@ -81,6 +81,14 @@ export function useMail() {
     return result;
   };
 
+  const checkMailAuth = async (domainId: string): Promise<MailAuthStatusResponse> => {
+    const result = await fetchAPI<MailAuthStatusResponse>(`/api/mail/auth/${domainId}/check`, {
+      method: "POST",
+    });
+    await fetchDomains();
+    return result;
+  };
+
   const sendTestEmail = async (input: SendTestEmailInput): Promise<TestEmailResultResponse> => {
     return await fetchAPI<TestEmailResultResponse>("/api/mail/test-send", {
       method: "POST",
@@ -112,6 +120,7 @@ export function useMail() {
     syncDomains,
     generateDkim,
     regenerateMailAuth,
+    checkMailAuth,
     rotateDkim,
     sendTestEmail,
     testOpenRelay,

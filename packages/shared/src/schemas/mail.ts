@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { DnsModeSchema } from "./domains.js";
 
 /**
  * Schema validating Dovecot IMAP server diagnostics and service status.
@@ -62,12 +63,30 @@ export const MailAuthCheckSchema = z.object({
 export type MailAuthCheck = z.infer<typeof MailAuthCheckSchema>;
 
 /**
+ * A record a CONNECTED domain's owner must publish at their own registrar.
+ * `live` is true when public DNS already serves a record for that purpose.
+ */
+export const RequiredMailRecordSchema = z.object({
+  purpose: z.enum(["MX", "SPF", "DKIM", "DMARC"]),
+  type: z.enum(["TXT", "MX"]),
+  name: z.string(),
+  value: z.string(),
+  priority: z.number().int().optional(),
+  live: z.boolean(),
+});
+
+export type RequiredMailRecordResponse = z.infer<typeof RequiredMailRecordSchema>;
+
+/**
  * Schema for an internal-only 0-100 email deliverability scorecard (F4.5).
- * Computed entirely from Vexlyx's own DnsRecord table — no external lookups.
+ * MANAGED domains score from Vexlyx's own DnsRecord table; CONNECTED domains
+ * score from live public DNS lookups (F5.26).
  */
 export const MailAuthStatusSchema = z.object({
   domainId: z.string(),
   hostname: z.string(),
+  dnsMode: DnsModeSchema,
+  requiredRecords: z.array(RequiredMailRecordSchema).optional(),
   spfConfigured: z.boolean(),
   dkimConfigured: z.boolean(),
   dmarcConfigured: z.boolean(),
@@ -91,6 +110,8 @@ export const VirtualDomainSchema = z.object({
   domainId: z.string(),
   hostname: z.string(),
   status: z.string(),
+  dnsMode: DnsModeSchema,
+  requiredRecords: z.array(RequiredMailRecordSchema).optional(),
   dkimEnabled: z.boolean(),
   dkimRecord: DkimRecordSchema.optional(),
   mailboxCount: z.number().int().default(0),

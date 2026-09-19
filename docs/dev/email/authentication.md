@@ -122,3 +122,15 @@ Manual check:
 - **Hard-fail SPF / enforced DMARC**: expose a per-domain toggle that swaps `~all` → `-all` and `p=none` → `p=quarantine`/`p=reject` once a domain's sending reputation is established — the record templates are centralized in `DnsService.initializeEmailAuthRecords`, a single place to parameterize.
 - **Live propagation-aware scoring**: the score is currently DB-only by design (no external calls). A "live" variant could reuse F3.3's `DnsService.checkPropagation()` resolver-query logic to additionally confirm the records have actually propagated to public DNS, surfaced as a separate "Propagation" badge rather than folded into this score.
 - **BIMI / MTA-STS**: additional TXT/CNAME records for brand indicators or transport security policy would follow the exact same "define template + check-then-create + syncZoneFile" pattern already established here and in F3.3's `initializeDefaultRecords`.
+
+## Connect-only domains (F5.26)
+
+Records are only written to a zone when the domain's `dnsMode` is `MANAGED` (see `docs/dev/dns-management.md` §9). For a `CONNECTED` domain, DNS lives at the user's registrar, so:
+
+- `DnsService.initializeEmailAuthRecords`, `getOrGenerateDkim` and `rotateDkim` write no `DnsRecord` rows and no zone file. The DKIM key pair is still generated (OpenDKIM signs with it).
+- `buildRequiredMailRecords` (`apps/api/src/modules/mail/required-records.ts`) is the single source for the MX/SPF/DMARC/DKIM values. MANAGED seeds them into the zone; CONNECTED returns them as `requiredRecords` for the user to add at their registrar.
+- The scorecard for a CONNECTED domain is computed from live public DNS (`lookupLiveMailRecords`: 1.1.1.1 / 8.8.8.8 / 9.9.9.9). Any valid SPF/DMARC/MX counts; DKIM must carry the same public key we generated. `computeAuthChecks` itself is unchanged and stays pure.
+- `POST /api/mail/auth/:domainId/check` re-runs the check on demand (the dashboard's "Check records" button).
+- Rotating DKIM on a CONNECTED domain switches signing immediately, but the new record must be added at the registrar. The rotate dialog warns about this and `newKey.inDns` is `false`.
+- With `NODE_ENV=test` or `VEXLYX_MOCK_DNS=true` the live lookup reports every required record as present.
+

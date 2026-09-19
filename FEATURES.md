@@ -2290,6 +2290,29 @@ F5.22 only relabeled the DNS-hosting UI; nothing was gated. A user who just conn
 
 ---
 
+### F5.26 — Mail Auth Records for Connect-Only Domains
+**Status:** 🟢 COMPLETED
+
+**Description:**
+Follow-up to F5.25. Mail (F4.5) still wrote MX/SPF/DMARC/DKIM `DnsRecord` rows for connect-only (`CONNECTED`) domains and scored deliverability from them, so a domain whose DNS lives at the user's registrar could show "Excellent, 100/100" while none of the records existed publicly. Connected domains now show the records to add at their registrar and are scored from live public DNS. Managed domains are unchanged.
+
+**Acceptance Criteria:**
+- [x] No `DnsRecord` rows or zone file are written by mail setup or DKIM generation/rotation for `CONNECTED` domains
+- [x] `requiredRecords` (MX/SPF/DMARC/DKIM) returned for connected domains from a single shared builder also used to seed managed zones
+- [x] Deliverability score for connected domains comes from live lookups against public resolvers; DKIM must match the generated public key
+- [x] `POST /api/mail/auth/:domainId/check` and a "Check records" button
+- [x] Rotate-key dialog warns that the new record must be added at the registrar
+
+**Test Plan:**
+1. Connected domain with a mailbox → registrar table shows all records "Not found", score low
+2. Add the records at a real/mock DNS → "Check records" flips them to "Live", score rises
+3. Managed domain (e.g. `mindgera.site`) behaves exactly as before
+
+**Developer Docs:**
+- **Location:** `docs/dev/email/authentication.md` ("Connect-only domains")
+
+---
+
 ## Phase 6: Ecosystem & Launch
 
 ### F6.1 — Complete Documentation

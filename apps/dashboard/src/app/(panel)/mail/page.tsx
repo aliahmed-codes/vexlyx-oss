@@ -53,6 +53,7 @@ import { AliasesPanel } from "@/components/mail/AliasesPanel";
 import { WebmailPanel } from "@/components/mail/WebmailPanel";
 import { QueuePanel } from "@/components/mail/QueuePanel";
 import { DeliveryLogPanel } from "@/components/mail/DeliveryLogPanel";
+import { RegistrarRecordsTable } from "@/components/mail/RegistrarRecordsTable";
 import { useMail } from "@/hooks/useMail";
 import { useAuth } from "@/hooks/useAuth";
 import { cn } from "@/lib/utils";
@@ -73,6 +74,7 @@ export default function MailPage() {
     syncDomains,
     generateDkim,
     regenerateMailAuth,
+    checkMailAuth,
     rotateDkim,
     sendTestEmail,
     testOpenRelay,
@@ -87,6 +89,7 @@ export default function MailPage() {
   const [isSyncing, setIsSyncing] = useState(false);
   const [generatingDkimId, setGeneratingDkimId] = useState<string | null>(null);
   const [regeneratingAuthId, setRegeneratingAuthId] = useState<string | null>(null);
+  const [checkingAuthId, setCheckingAuthId] = useState<string | null>(null);
 
   // DKIM Rotation Dialog state
   const [rotateTargetId, setRotateTargetId] = useState<string | null>(null);
@@ -148,7 +151,9 @@ export default function MailPage() {
     try {
       const res = await generateDkim(domainId);
       toast.success(`Generated 2048-bit DKIM key for ${res.domain}`);
-      if (res.inDns) {
+      if (domains.find((d) => d.domainId === domainId)?.dnsMode === "CONNECTED") {
+        toast.info("Add the DKIM TXT record at your registrar, then click Check records");
+      } else if (res.inDns) {
         toast.info("Auto-created TXT record in Vexlyx CoreDNS");
       }
     } catch {
@@ -181,6 +186,18 @@ export default function MailPage() {
       toast.error("Failed to regenerate SPF/DKIM/DMARC/MX records");
     } finally {
       setRegeneratingAuthId(null);
+    }
+  };
+
+  const handleCheckAuth = async (domainId: string) => {
+    setCheckingAuthId(domainId);
+    try {
+      const res = await checkMailAuth(domainId);
+      toast.success(`${res.hostname}: ${res.grade} (${res.score}/100)`);
+    } catch {
+      toast.error("Failed to check DNS records");
+    } finally {
+      setCheckingAuthId(null);
     }
   };
 
@@ -542,6 +559,7 @@ export default function MailPage() {
               {filteredDomains.map((domain) => {
                 const isExpanded = expandedDomainId === domain.domainId;
                 const dkim = domain.dkimRecord;
+                const isConnected = domain.dnsMode === "CONNECTED";
 
                 return (
                   <div
@@ -639,6 +657,7 @@ export default function MailPage() {
                                 {domain.deliverabilityScore}/100)
                               </p>
                             </div>
+                            {!isConnected && (
                             <Button
                               size="sm"
                               variant="outline"
@@ -656,6 +675,7 @@ export default function MailPage() {
                                 ? "Regenerating…"
                                 : "Regenerate All"}
                             </Button>
+                            )}
                           </div>
 
                           <div className="grid gap-2 sm:grid-cols-3">
@@ -705,6 +725,15 @@ export default function MailPage() {
                           </div>
                         </div>
 
+                        {isConnected && domain.requiredRecords && (
+                          <RegistrarRecordsTable
+                            domainId={domain.domainId}
+                            records={domain.requiredRecords}
+                            isChecking={checkingAuthId === domain.domainId}
+                            onCheck={() => void handleCheckAuth(domain.domainId)}
+                          />
+                        )}
+
                         {domain.dkimEnabled && dkim ? (
                           <div className="space-y-4">
                             <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
@@ -713,7 +742,9 @@ export default function MailPage() {
                                   OpenDKIM DNS TXT Record
                                 </h4>
                                 <p className="text-xs text-muted-foreground">
-                                  Add this TXT record to your DNS zone so recipient mail servers verify incoming mail signatures.
+                                  {isConnected
+                                    ? "Add this TXT record at your registrar so recipient mail servers verify incoming mail signatures."
+                                    : "Add this TXT record to your DNS zone so recipient mail servers verify incoming mail signatures."}
                                 </p>
                               </div>
 
@@ -724,7 +755,14 @@ export default function MailPage() {
                                     className="border-emerald-500/20 bg-emerald-500/10 text-emerald-600 dark:text-emerald-400"
                                   >
                                     <CheckCircle2 className="mr-1 h-3 w-3" />
-                                    Active in Vexlyx DNS
+                                    {isConnected ? "Live in public DNS" : "Active in Vexlyx DNS"}
+                                  </Badge>
+                                ) : isConnected ? (
+                                  <Badge
+                                    variant="outline"
+                                    className="border-amber-500/20 bg-amber-500/10 text-amber-600 dark:text-amber-400"
+                                  >
+                                    Not published yet
                                   </Badge>
                                 ) : (
                                   <Button
@@ -1117,6 +1155,16 @@ export default function MailPage() {
                   </p>
                 </div>
               </div>
+
+              {!rotateResult.newKey.inDns && (
+                <div className="rounded-lg border border-amber-500/20 bg-amber-500/5 p-3 text-xs text-amber-700 dark:text-amber-400">
+                  This domain&rsquo;s DNS is at your registrar, so the new record was not published
+                  for you. Add a TXT record named{" "}
+                  <code className="font-mono">{rotateResult.newKey.dnsRecordName}</code> with the
+                  value below now &mdash; until it is live, outgoing mail signed with the new key
+                  will fail DKIM checks.
+                </div>
+              )}
 
               <div className="rounded-md border border-border bg-card p-3">
                 <div className="flex items-center justify-between">
