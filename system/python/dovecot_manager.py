@@ -56,12 +56,24 @@ def get_dovecot_dir() -> Path:
     return target
 
 
+def _make_world_readable(path: Path) -> None:
+    """The passwd-file is bind-mounted into the Dovecot container, whose `dovecot`
+    user differs from the host user that writes it (created 0640 under the usual
+    host umask). Unreadable, every IMAP/webmail login fails with a temporary
+    authentication failure. It holds password hashes only."""
+    try:
+        os.chmod(path, 0o644)
+    except OSError:
+        pass
+
+
 def get_users_file() -> Path:
     config_dir = get_dovecot_dir() / "config"
     config_dir.mkdir(parents=True, exist_ok=True)
     users_file = config_dir / "users"
     if not users_file.exists():
         users_file.write_text("", encoding="utf-8", newline="\n")
+    _make_world_readable(users_file)
     return users_file
 
 
@@ -138,6 +150,7 @@ def sync_mailboxes(mailboxes: list, domains: list) -> dict:
     users_file.write_text(
         "\n".join(all_lines) + ("\n" if all_lines else ""), encoding="utf-8", newline="\n"
     )
+    _make_world_readable(users_file)
 
     return {
         "success": True,

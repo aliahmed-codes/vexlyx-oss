@@ -523,6 +523,42 @@ def get_delivery_log(domain: str = None, mailbox: str = None, status: str = None
 # Virtual Domains & Mailbox Synchronization
 # ---------------------------------------------------------------------------
 
+def _make_world_readable(path: Path) -> None:
+    """Domain/mailbox tables are bind-mounted into the mail containers, whose
+    service users differ from the host user that writes them (created 0640 under
+    the usual host umask). Without read access Postfix cannot see the domain list."""
+    try:
+        os.chmod(path, 0o644)
+    except OSError:
+        pass
+
+
+def _compile_lmdb_map(map_name: str) -> None:
+    """Rebuild /etc/postfix/<map_name>.lmdb inside the Postfix container.
+
+    postmap drops privileges to the owner of the source file, and the bind-mounted
+    source is owned by the (non-root) host user, so it cannot write into the
+    root-owned /etc/postfix. Compiling a root-owned copy and moving the result
+    into place avoids that. The result must stay world-readable: delivery runs in
+    the unprivileged `virtual` service."""
+    script = (
+        f"cp /etc/postfix/{map_name} /tmp/{map_name} && "
+        f"postmap lmdb:/tmp/{map_name} && "
+        f"mv /tmp/{map_name}.lmdb /etc/postfix/{map_name}.lmdb && "
+        f"chmod 644 /etc/postfix/{map_name}.lmdb; "
+        f"rm -f /tmp/{map_name}"
+    )
+    try:
+        subprocess.run(
+            ["docker", "exec", "vexlyx-postfix", "sh", "-c", script],
+            capture_output=True,
+            text=True,
+            timeout=10,
+        )
+    except Exception:
+        pass
+
+
 def sync_virtual_domains(domains: list, mailboxes: list = None) -> dict:
     postfix_dir = get_postfix_dir()
     config_dir = postfix_dir / "config"
@@ -559,6 +595,8 @@ def sync_virtual_domains(domains: list, mailboxes: list = None) -> dict:
     virtual_mailbox_file.write_text(
         "\n".join(mailbox_lines) + ("\n" if mailbox_lines else ""), encoding="utf-8", newline="\n"
     )
+    _make_world_readable(virtual_domains_file)
+    _make_world_readable(virtual_mailbox_file)
 
     # Docker Desktop's Windows bind-mount (gRPC-FUSE/virtiofs) occasionally
     # serves a transient read error for a fraction of a second right after a
@@ -582,21 +620,7 @@ def sync_virtual_domains(domains: list, mailboxes: list = None) -> dict:
     # can't read a root-only file. Without the chmod below, every delivery
     # fails with "Permission denied" / "mail system configuration error",
     # even though the lookup table itself is correct and reload succeeds.
-    try:
-        subprocess.run(
-            ["docker", "exec", "vexlyx-postfix", "postmap", "lmdb:/etc/postfix/virtual_mailbox_maps"],
-            capture_output=True,
-            text=True,
-            timeout=5,
-        )
-        subprocess.run(
-            ["docker", "exec", "vexlyx-postfix", "chmod", "644", "/etc/postfix/virtual_mailbox_maps.lmdb"],
-            capture_output=True,
-            text=True,
-            timeout=5,
-        )
-    except Exception:
-        pass
+    _compile_lmdb_map("virtual_mailbox_maps")
 
     # If running in docker or host with postfix installed, attempt reload
     reloaded = False
@@ -648,6 +672,7 @@ def sync_virtual_aliases(aliases: list) -> dict:
     virtual_alias_file.write_text(
         "\n".join(lines) + ("\n" if lines else ""), encoding="utf-8", newline="\n"
     )
+    _make_world_readable(virtual_alias_file)
 
     # See sync_virtual_domains: Windows bind-mount write-then-read race workaround.
     time.sleep(0.3)
@@ -655,21 +680,7 @@ def sync_virtual_aliases(aliases: list) -> dict:
     # Same postmap/chmod dance as virtual_mailbox_maps: postmap runs as root
     # inside the container, but the unprivileged `virtual` delivery agent
     # can't read a root-only .lmdb file without the chmod.
-    try:
-        subprocess.run(
-            ["docker", "exec", "vexlyx-postfix", "postmap", "lmdb:/etc/postfix/virtual_alias_maps"],
-            capture_output=True,
-            text=True,
-            timeout=5,
-        )
-        subprocess.run(
-            ["docker", "exec", "vexlyx-postfix", "chmod", "644", "/etc/postfix/virtual_alias_maps.lmdb"],
-            capture_output=True,
-            text=True,
-            timeout=5,
-        )
-    except Exception:
-        pass
+    _compile_lmdb_map("virtual_alias_maps")
 
     reloaded = False
     try:

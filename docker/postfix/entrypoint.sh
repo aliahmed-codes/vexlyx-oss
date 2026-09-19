@@ -46,8 +46,20 @@ if [ "${VEXLYX_SEED_DEV_FIXTURES:-true}" = "true" ] && [ ! -s /etc/postfix/virtu
     echo "test@vexlyx.local vexlyx.local/test/Maildir/" > /etc/postfix/virtual_mailbox_maps
     echo "admin@vexlyx.local vexlyx.local/test/Maildir/" >> /etc/postfix/virtual_mailbox_maps
 fi
-postmap /etc/postfix/virtual_mailbox_maps || true
-postmap /etc/postfix/virtual_alias_maps || true
+# postmap drops privileges to the OWNER of the source file before writing. On a
+# Linux host the API writes these bind-mounted files as its own non-root uid, so
+# postmap then can't create the .lmdb in root-owned /etc/postfix ("open database
+# ... Permission denied") and every mailbox lookup fails. Compile a root-owned
+# copy and move the result into place instead.
+compile_map() {
+    name="$1"
+    cp "/etc/postfix/$name" "/tmp/$name" &&
+        postmap "lmdb:/tmp/$name" &&
+        mv "/tmp/$name.lmdb" "/etc/postfix/$name.lmdb"
+    rm -f "/tmp/$name"
+}
+compile_map virtual_mailbox_maps || true
+compile_map virtual_alias_maps || true
 # On a Windows Docker Desktop bind mount (gRPC-FUSE/virtiofs), the .lmdb file
 # postmap just wrote is sometimes not yet stat-able by the immediately
 # following chmod, which then fails silently ("|| true" swallows it) and
