@@ -171,7 +171,7 @@ class TestMailAuthLiveEndToEnd(unittest.TestCase):
             )
             self.assertEqual(entry["dnsMode"], "CONNECTED")
             purposes = {r["purpose"] for r in entry["requiredRecords"]}
-            self.assertEqual(purposes, {"MX", "SPF", "DMARC", "DKIM"})
+            self.assertEqual(purposes, {"MX", "HOST", "SPF", "DMARC", "DKIM"})
 
             with self.assertRaises(urllib.error.HTTPError) as ctx:
                 self._get(f"{API_BASE_URL}/api/domains/{connected_id}/dns")

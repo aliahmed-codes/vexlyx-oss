@@ -321,6 +321,16 @@ export class DnsService {
           })),
       },
       {
+        type: "A",
+        name: "mail",
+        value: valueOf("HOST"),
+        ttl: 3600,
+        exists: async () =>
+          !!(await this.prisma.dnsRecord.findFirst({
+            where: { domainId: domain.id, type: { in: ["A", "CNAME"] }, name: "mail" },
+          })),
+      },
+      {
         type: "MX",
         name: "@",
         value: valueOf("MX"),

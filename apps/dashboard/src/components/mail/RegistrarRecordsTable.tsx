@@ -9,6 +9,14 @@ import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 import type { RequiredMailRecordResponse } from "@vexlyx/shared";
 
+const PURPOSE_LABEL: Record<RequiredMailRecordResponse["purpose"], string> = {
+  MX: "MX",
+  HOST: "Mail host",
+  SPF: "SPF",
+  DMARC: "DMARC",
+  DKIM: "DKIM",
+};
+
 interface RegistrarRecordsTableProps {
   domainId: string;
   records: RequiredMailRecordResponse[];
@@ -62,7 +70,7 @@ export function RegistrarRecordsTable({
             <div key={key} className="rounded-md border border-border bg-background p-3">
               <div className="flex items-center justify-between gap-2">
                 <div className="flex items-center gap-2 text-xs">
-                  <span className="font-semibold text-foreground">{record.purpose}</span>
+                  <span className="font-semibold text-foreground">{PURPOSE_LABEL[record.purpose]}</span>
                   <span className="font-mono text-muted-foreground">
                     {record.type} · {record.name}
                     {record.priority !== undefined && ` · priority ${record.priority}`}

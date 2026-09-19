@@ -67,8 +67,8 @@ export type MailAuthCheck = z.infer<typeof MailAuthCheckSchema>;
  * `live` is true when public DNS already serves a record for that purpose.
  */
 export const RequiredMailRecordSchema = z.object({
-  purpose: z.enum(["MX", "SPF", "DKIM", "DMARC"]),
-  type: z.enum(["TXT", "MX"]),
+  purpose: z.enum(["MX", "HOST", "SPF", "DKIM", "DMARC"]),
+  type: z.enum(["TXT", "MX", "A"]),
   name: z.string(),
   value: z.string(),
   priority: z.number().int().optional(),

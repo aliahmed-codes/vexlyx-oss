@@ -1,11 +1,11 @@
 import dns from "node:dns/promises";
 import { PUBLIC_RESOLVER_IPS } from "../domains/resolvers.js";
 
-export type MailRecordPurpose = "MX" | "SPF" | "DKIM" | "DMARC";
+export type MailRecordPurpose = "MX" | "HOST" | "SPF" | "DKIM" | "DMARC";
 
 export interface RequiredMailRecord {
   purpose: MailRecordPurpose;
-  type: "TXT" | "MX";
+  type: "TXT" | "MX" | "A";
   name: string;
   value: string;
   priority?: number;
@@ -36,6 +36,8 @@ export function buildRequiredMailRecords(
 ): RequiredMailRecord[] {
   const records: RequiredMailRecord[] = [
     { purpose: "MX", type: "MX", name: "@", value: `mail.${hostname}`, priority: 10 },
+    // The MX target above must itself resolve to this server, or mail never arrives.
+    { purpose: "HOST", type: "A", name: "mail", value: serverIp },
     { purpose: "SPF", type: "TXT", name: "@", value: `v=spf1 mx a ip4:${serverIp} ~all` },
     {
       purpose: "DMARC",
@@ -98,11 +100,18 @@ export async function lookupLiveMailRecords(
 
   const rows: LiveMailRecordRow[] = [];
 
-  const [apexTxt, dmarcTxt, mx] = await Promise.all([
+  const [apexTxt, dmarcTxt, mx, mailHostIps] = await Promise.all([
     txt("@"),
     txt("_dmarc"),
     resolveAcross(async (resolver) => resolver.resolveMx(hostname)),
+    resolveAcross(async (resolver) => resolver.resolve4(fqdn("mail"))),
   ]);
+
+  // Only an A record pointing at this server counts — mail must reach us.
+  const expectedIp = required.find((r) => r.purpose === "HOST")?.value;
+  for (const ip of new Set(mailHostIps)) {
+    if (ip === expectedIp) rows.push({ type: "A", name: "mail", value: ip, priority: null });
+  }
 
   for (const value of new Set(apexTxt)) {
     if (value.startsWith("v=spf1")) rows.push({ type: "TXT", name: "@", value, priority: null });
@@ -132,6 +141,8 @@ export function isRecordLive(record: RequiredMailRecord, live: LiveMailRecordRow
   switch (record.purpose) {
     case "MX":
       return live.some((r) => r.type === "MX");
+    case "HOST":
+      return live.some((r) => r.type === "A" && r.name === "mail");
     case "SPF":
       return live.some((r) => r.type === "TXT" && r.name === "@");
     case "DMARC":
