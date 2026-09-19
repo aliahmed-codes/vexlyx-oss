@@ -71,6 +71,17 @@ services:
     environment:
       VEXLYX_SEED_DEV_FIXTURES: "false"
 
+  # The base file routes Roundcube on the dev hostname over plain HTTP, which
+  # 404s in production — serve it at webmail.${VEXLYX_DOMAIN} over HTTPS
+  # (the same host the API advertises as WEBMAIL_URL).
+  roundcube:
+    labels: !override
+      - "traefik.enable=true"
+      - "traefik.http.routers.webmail.rule=Host(`webmail.${VEXLYX_DOMAIN}`)"
+      - "traefik.http.routers.webmail.entrypoints=websecure"
+      - "traefik.http.routers.webmail.tls.certresolver=letsencrypt"
+      - "traefik.http.services.webmail.loadbalancer.server.port=80"
+
   # ---------------------------------------------------------------------------
   # The panel itself
   # ---------------------------------------------------------------------------
