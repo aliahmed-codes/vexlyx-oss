@@ -286,7 +286,10 @@ export function generateZoneFile(
     : (options.ns1 ?? `ns1.vexlyx.com.`);
   const ns2 = options.ns2 ?? `ns2.vexlyx.com.`;
   const adminEmail = (options.adminEmail ?? `hostmaster.${domain}`).replace(/@/g, ".");
-  const serial = options.serial ?? parseInt(new Date().toISOString().slice(0, 10).replace(/-/g, "") + "01", 10);
+  // CoreDNS reloads a zone only when its SOA serial changes. A date-based serial
+  // stays the same all day, so edits made after the first load were never served;
+  // epoch seconds change on every write (and fit the 32-bit serial until 2106).
+  const serial = options.serial ?? Math.floor(Date.now() / 1000);
 
   const lines: string[] = [
     `; Zone file for ${domain}`,
@@ -296,7 +299,7 @@ export function generateZoneFile(
     "",
     `; SOA Record`,
     `@   IN  SOA ${ns1} ${adminEmail.endsWith(".") ? adminEmail : adminEmail + "."} (`,
-    `            ${serial} ; Serial (YYYYMMDDnn)`,
+    `            ${serial} ; Serial`,
     `            7200       ; Refresh (2h)`,
     `            3600       ; Retry (1h)`,
     `            1209600    ; Expire (2w)`,

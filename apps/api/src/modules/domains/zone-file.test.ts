@@ -1,4 +1,4 @@
-import { describe, it, expect } from "vitest";
+import { describe, it, expect, vi, afterEach } from "vitest";
 import { generateZoneFile, parseZoneFile } from "@vexlyx/shared";
 
 const record = (type: string, name: string, value: string, extra: Record<string, unknown> = {}) => ({
@@ -8,6 +8,8 @@ const record = (type: string, name: string, value: string, extra: Record<string,
   ttl: 3600,
   ...extra,
 });
+
+afterEach(() => vi.useRealTimers());
 
 describe("generateZoneFile", () => {
   it("makes CNAME, MX and NS targets absolute so they are not treated as relative names", () => {
@@ -68,6 +70,19 @@ describe("generateZoneFile", () => {
     const zone = generateZoneFile("example.com", [record("TXT", "@", 'say "hi"')]);
 
     expect(zone).toContain('"say \\"hi\\""');
+  });
+
+  it("uses a serial that changes on every write so CoreDNS reloads the zone", () => {
+    vi.useFakeTimers();
+    const serialAt = (iso: string) => {
+      vi.setSystemTime(new Date(iso));
+      return Number(/(\d+) ; Serial/.exec(generateZoneFile("example.com", []))![1]);
+    };
+
+    const first = serialAt("2026-09-19T10:00:00Z");
+    const later = serialAt("2026-09-19T10:00:05Z");
+
+    expect(later).toBeGreaterThan(first);
   });
 
   it("round-trips through parseZoneFile", () => {
