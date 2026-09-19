@@ -676,6 +676,21 @@ export class DnsService {
   }
 
   /**
+   * Regenerates the zone file of every MANAGED domain from the database.
+   * @returns how many zones were written
+   */
+  async syncAllManagedZones(): Promise<number> {
+    const domains = await this.prisma.domain.findMany({
+      where: { dnsMode: "MANAGED" },
+      select: { id: true, hostname: true },
+    });
+    for (const domain of domains) {
+      await this.syncZoneFile(domain.hostname, domain.id);
+    }
+    return domains.length;
+  }
+
+  /**
    * Write RFC 1035 zone file to CoreDNS zones directory. No-op unless the
    * domain is MANAGED, so connect-only domains never get a zone we don't serve.
    */

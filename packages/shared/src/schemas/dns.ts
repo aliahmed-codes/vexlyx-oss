@@ -231,6 +231,32 @@ export interface GenerateZoneOptions {
 }
 
 /**
+ * Zone-file hostnames without a trailing dot are relative to $ORIGIN, so a
+ * stored "mail.example.com" would be served as "mail.example.com.example.com.".
+ * Record values are always entered as full hostnames, so make them absolute.
+ */
+function toAbsoluteName(value: string): string {
+  const trimmed = value.trim();
+  return trimmed === "@" || trimmed.endsWith(".") ? trimmed : `${trimmed}.`;
+}
+
+/**
+ * Renders a TXT value as one or more quoted <=255-byte strings (the DNS limit
+ * per string; 2048-bit DKIM keys exceed it). Any quoting already present in the
+ * stored value is stripped first so it isn't doubled.
+ */
+function toTxtStrings(value: string): string {
+  let text = value.trim();
+  if (text.length >= 2 && text.startsWith('"') && text.endsWith('"')) {
+    text = text.slice(1, -1);
+  }
+  const escaped = text.replace(/\\/g, "\\\\").replace(/"/g, '\\"');
+  // Split on escape-sequence boundaries so a chunk never ends mid-escape
+  const chunks = escaped.match(/(?:\\.|[^\\]){1,255}/g) ?? [""];
+  return chunks.map((chunk) => `"${chunk}"`).join(" ");
+}
+
+/**
  * Generates standard RFC 1035 DNS Zone text compatible with CoreDNS, BIND9, Route53, and Cloudflare.
  */
 export function generateZoneFile(
@@ -249,7 +275,15 @@ export function generateZoneFile(
   const domain = hostname.endsWith(".") ? hostname.slice(0, -1) : hostname;
   const origin = `${domain}.`;
   const defaultTtl = options.ttl ?? 3600;
-  const ns1 = options.ns1 ?? `ns1.vexlyx.com.`;
+  // If the zone carries its own apex NS records they are the nameserver set;
+  // the SOA primary follows the first one instead of a hard-coded default.
+  const apexNsRecords = records.filter(
+    (r) => r.type.toUpperCase() === "NS" && (r.name.trim() || "@") === "@",
+  );
+  const hasOwnNs = apexNsRecords.length > 0;
+  const ns1 = hasOwnNs
+    ? toAbsoluteName(apexNsRecords[0]!.value)
+    : (options.ns1 ?? `ns1.vexlyx.com.`);
   const ns2 = options.ns2 ?? `ns2.vexlyx.com.`;
   const adminEmail = (options.adminEmail ?? `hostmaster.${domain}`).replace(/@/g, ".");
   const serial = options.serial ?? parseInt(new Date().toISOString().slice(0, 10).replace(/-/g, "") + "01", 10);
@@ -268,10 +302,9 @@ export function generateZoneFile(
     `            1209600    ; Expire (2w)`,
     `            3600 )     ; Minimum TTL (1h)`,
     "",
-    `; Nameservers`,
-    `@       IN  NS      ${ns1}`,
-    `@       IN  NS      ${ns2}`,
-    "",
+    ...(hasOwnNs
+      ? []
+      : [`; Nameservers`, `@       IN  NS      ${ns1}`, `@       IN  NS      ${ns2}`, ""]),
     `; User DNS Records`,
   ];
 
@@ -283,15 +316,18 @@ export function generateZoneFile(
 
     if (type === "MX") {
       const prio = record.priority ?? 10;
-      lines.push(`${paddedName} ${ttlStr} IN  MX    ${prio} ${record.value}`);
+      lines.push(`${paddedName} ${ttlStr} IN  MX    ${prio} ${toAbsoluteName(record.value)}`);
     } else if (type === "SRV") {
       const prio = record.priority ?? 0;
       const weight = record.weight ?? 0;
       const port = record.port ?? 0;
-      lines.push(`${paddedName} ${ttlStr} IN  SRV   ${prio} ${weight} ${port} ${record.value}`);
+      lines.push(
+        `${paddedName} ${ttlStr} IN  SRV   ${prio} ${weight} ${port} ${toAbsoluteName(record.value)}`,
+      );
     } else if (type === "TXT") {
-      const escaped = record.value.replace(/"/g, '\\"');
-      lines.push(`${paddedName} ${ttlStr} IN  TXT   "${escaped}"`);
+      lines.push(`${paddedName} ${ttlStr} IN  TXT   ${toTxtStrings(record.value)}`);
+    } else if (type === "CNAME" || type === "NS") {
+      lines.push(`${paddedName} ${ttlStr} IN  ${type.padEnd(6, " ")} ${toAbsoluteName(record.value)}`);
     } else {
       lines.push(`${paddedName} ${ttlStr} IN  ${type.padEnd(6, " ")} ${record.value}`);
     }

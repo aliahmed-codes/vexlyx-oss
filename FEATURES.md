@@ -2325,6 +2325,7 @@ Hosted DNS (F5.25) could not actually serve the internet: CoreDNS was bound to l
 - [x] Default records use `PUBLIC_IP` (falling back to `SERVER_IP`) instead of `127.0.0.1`
 - [x] "Prepare zone before switching" (`skipDelegationCheck`): load and test the zone before changing nameservers; still requires a verified domain
 - [x] Managed domains not yet delegated show a "Not live yet" banner with the nameservers to set
+- [x] Zone generator fixed for real-world zones: CNAME/MX/NS/SRV targets written as absolute names, long TXT (DKIM) split into <=255-byte strings without doubled quotes, zone's own apex NS records used instead of hard-coded defaults; all hosted zones are rebuilt on API start
 
 **Test Plan:**
 1. Enable hosting with `VEXLYX_DNS_BIND`/`VEXLYX_COREFILE` set; `dig @<server-ip> example.com` answers, `dig @<server-ip> google.com` is refused

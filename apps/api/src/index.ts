@@ -23,6 +23,7 @@ import { dockerfileRoutes } from "./modules/dockerfile/routes.js";
 import { databaseRoutes } from "./modules/databases/routes.js";
 import { webhookRoutes } from "./modules/webhooks/routes.js";
 import { domainRoutes } from "./modules/domains/routes.js";
+import { DnsService } from "./modules/domains/dns-service.js";
 import { mailRoutes } from "./modules/mail/routes.js";
 import { mailboxRoutes } from "./modules/mailboxes/routes.js";
 import { aliasRoutes } from "./modules/aliases/routes.js";
@@ -145,6 +146,13 @@ async function start() {
     app.log.info(
       `${APP_NAME} API v${VEXLYX_VERSION} listening on http://${env.HOST}:${env.PORT}`,
     );
+
+    // Zone files are derived from the database, so rebuild them on boot: picks up
+    // generator fixes and restores zones if the zones volume was ever lost.
+    new DnsService(app.prisma)
+      .syncAllManagedZones()
+      .then((count) => app.log.info(`Synced ${count} hosted DNS zone(s)`))
+      .catch((err: unknown) => app.log.error(err, "Failed to sync hosted DNS zones"));
   } catch (err) {
     app.log.error(err, "Failed to start server");
     process.exit(1);
