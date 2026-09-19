@@ -8,8 +8,6 @@ import {
   Search,
   RefreshCw,
   ExternalLink,
-  Copy,
-  Check,
   Trash2,
   CheckCircle2,
   AlertCircle,
@@ -50,12 +48,10 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import {
-  Tooltip,
-  TooltipContent,
   TooltipProvider,
-  TooltipTrigger,
 } from "@/components/ui/tooltip";
 import { useDomains } from "@/hooks/useDomains";
+import { DomainConnectInstructions } from "@/components/domains/DomainConnectInstructions";
 import { useProjects } from "@/hooks/useProjects";
 import { useUsage } from "@/hooks/useUsage";
 import { QuotaBadge, isQuotaAtLimit } from "@/components/quota/QuotaBadge";
@@ -166,7 +162,6 @@ export default function DomainsPage() {
   // Instructions modal state
   const [instructionsDomain, setInstructionsDomain] = useState<DomainResponse | null>(null);
   const [instructionsModalOpen, setInstructionsModalOpen] = useState(false);
-  const [copiedField, setCopiedField] = useState<string | null>(null);
 
   // Verification in-progress state
   const [verifyingId, setVerifyingId] = useState<string | null>(null);
@@ -219,13 +214,6 @@ export default function DomainsPage() {
       return true;
     });
   }, [domains, searchQuery, statusFilter, projectFilter, typeFilter]);
-
-  const copyToClipboard = (text: string, field: string) => {
-    void navigator.clipboard.writeText(text);
-    setCopiedField(field);
-    toast.success("Copied to clipboard");
-    setTimeout(() => setCopiedField(null), 2000);
-  };
 
   const handleAddDomain = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -652,27 +640,19 @@ export default function DomainsPage() {
 
                   <div className="flex flex-col gap-2 pt-1">
                     <div className="flex items-center justify-between gap-2">
-                      <Tooltip>
-                        <TooltipTrigger asChild>
-                          <Button
-                            asChild
-                            variant="outline"
-                            size="sm"
-                            className="h-8 flex-1 text-xs gap-1.5 font-medium hover:text-primary"
-                          >
-                            <Link href={`/domains/${domain.id}/dns`}>
-                              <Server className="h-3.5 w-3.5 text-indigo-500" />
-                              Host DNS on Vexlyx
-                            </Link>
-                          </Button>
-                        </TooltipTrigger>
-                        <TooltipContent side="bottom" className="max-w-64 text-xs">
-                          Optional: delegates this domain&rsquo;s entire nameserver hosting to
-                          Vexlyx&rsquo;s CoreDNS. Not needed if you just want this domain to route
-                          here &mdash; the A/TXT records you already added at your registrar
-                          handle that.
-                        </TooltipContent>
-                      </Tooltip>
+                      {domain.dnsMode === "MANAGED" && (
+                        <Button
+                          asChild
+                          variant="outline"
+                          size="sm"
+                          className="h-8 flex-1 text-xs gap-1.5 font-medium hover:text-primary"
+                        >
+                          <Link href={`/domains/${domain.id}/dns`}>
+                            <Server className="h-3.5 w-3.5 text-indigo-500" />
+                            DNS Records
+                          </Link>
+                        </Button>
+                      )}
 
                       <Button
                         asChild
@@ -815,74 +795,12 @@ export default function DomainsPage() {
               Verify Domain Ownership
             </DialogTitle>
             <DialogDescription>
-              Configure the following DNS TXT record in your registrar DNS management zone.
+              Add these DNS records at your registrar (e.g. Cloudflare, Namecheap, GoDaddy).
             </DialogDescription>
           </DialogHeader>
 
           {instructionsDomain && (
-            <div className="space-y-4 py-2">
-              <div className="rounded-lg border border-border bg-muted/40 p-4 space-y-3">
-                <div className="space-y-2 text-xs">
-                  <div className="flex items-center justify-between gap-3">
-                    <span className="font-semibold text-muted-foreground">Record Type</span>
-                    <span className="font-mono text-foreground font-bold">TXT</span>
-                  </div>
-                  <div className="flex items-start justify-between gap-3">
-                    <span className="font-semibold text-muted-foreground shrink-0">
-                      Host / Name
-                    </span>
-                    <span className="font-mono text-foreground break-all text-right">
-                      {instructionsDomain.verificationInstructions?.recordName ??
-                        `_vexlyx-challenge.${instructionsDomain.hostname.replace(/^\*\./, "")}`}
-                    </span>
-                  </div>
-                  <div className="flex items-center justify-between gap-3">
-                    <span className="font-semibold text-muted-foreground">TTL</span>
-                    <span className="font-mono text-foreground">300 (or Auto)</span>
-                  </div>
-                </div>
-
-                <div className="space-y-1 pt-2 border-t border-border">
-                  <div className="flex items-center justify-between">
-                    <Label className="text-xs font-semibold text-muted-foreground">
-                      TXT Record Value
-                    </Label>
-                    <Button
-                      variant="ghost"
-                      size="sm"
-                      onClick={() =>
-                        copyToClipboard(
-                          instructionsDomain.verificationInstructions?.recordValue ??
-                            `vexlyx-verification=${instructionsDomain.verificationToken ?? ""}`,
-                          "txt-value-global",
-                        )
-                      }
-                      className="h-6 px-2 text-[11px] gap-1 text-primary hover:text-primary"
-                    >
-                      {copiedField === "txt-value-global" ? (
-                        <>
-                          <Check className="h-3 w-3" />
-                          Copied
-                        </>
-                      ) : (
-                        <>
-                          <Copy className="h-3 w-3" />
-                          Copy Value
-                        </>
-                      )}
-                    </Button>
-                  </div>
-                  <div className="rounded border border-border bg-background p-2 font-mono text-xs text-foreground break-all select-all">
-                    {instructionsDomain.verificationInstructions?.recordValue ??
-                      `vexlyx-verification=${instructionsDomain.verificationToken ?? ""}`}
-                  </div>
-                </div>
-              </div>
-
-              <div className="rounded-lg border border-amber-500/20 bg-amber-500/5 p-3 text-xs text-amber-700 dark:text-amber-400">
-                Once DNS propagation is complete, click &ldquo;Verify DNS Records&rdquo; to validate and activate Traefik routing.
-              </div>
-            </div>
+            <DomainConnectInstructions domain={instructionsDomain} showDnsHostingLink />
           )}
 
           <DialogFooter className="flex-col sm:flex-row gap-2">

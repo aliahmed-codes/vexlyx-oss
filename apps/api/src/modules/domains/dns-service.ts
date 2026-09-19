@@ -1,12 +1,14 @@
 import fs from "node:fs";
 import path from "node:path";
 import dns from "node:dns/promises";
-import type { PrismaClient } from "@prisma/client";
+import type { PrismaClient, Domain } from "@prisma/client";
 import {
   generateZoneFile,
   parseZoneFile,
 } from "@vexlyx/shared";
 import type {
+  DnsDelegationCheckResponse,
+  DnsMode,
   CreateDnsRecordInput,
   UpdateDnsRecordInput,
   DnsRecordResponse,
@@ -14,7 +16,10 @@ import type {
   DnsResolverCheck,
   DnsRecordType,
 } from "@vexlyx/shared";
+import { env } from "../../config/env.js";
 import { DomainError } from "./service.js";
+
+const PUBLIC_RESOLVER_IPS = ["1.1.1.1", "8.8.8.8", "9.9.9.9"];
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -237,8 +242,7 @@ export class DnsService {
     }> = [
       { type: "A", name: "@", value: serverIp, ttl: 3600 },
       { type: "CNAME", name: "www", value: domain.hostname, ttl: 3600 },
-      { type: "NS", name: "@", value: "ns1.vexlyx.com", ttl: 86400 },
-      { type: "NS", name: "@", value: "ns2.vexlyx.com", ttl: 86400 },
+      ...env.DNS_NAMESERVERS.map((value) => ({ type: "NS" as const, name: "@", value, ttl: 86400 })),
     ];
 
     for (const def of defaults) {
@@ -543,10 +547,123 @@ export class DnsService {
   }
 
   /**
-   * Write RFC 1035 zone file to CoreDNS zones directory.
+   * Checks whether the domain's public NS records point at Vexlyx's nameservers.
+   * Any one public resolver seeing every expected nameserver counts as delegated,
+   * matching the verification approach in DomainService.verify.
+   */
+  async checkDelegation(userId: string, domainId: string): Promise<DnsDelegationCheckResponse> {
+    const domain = await this.getDomainOrThrow(userId, domainId);
+    const expected = env.DNS_NAMESERVERS;
+
+    if (process.env.NODE_ENV === "test" || process.env.VEXLYX_MOCK_DNS === "true") {
+      return { delegated: true, found: expected, expected };
+    }
+
+    const baseTarget = domain.hostname.startsWith("*.") ? domain.hostname.slice(2) : domain.hostname;
+    const found = new Set<string>();
+    let delegated = false;
+
+    for (const resolverIp of PUBLIC_RESOLVER_IPS) {
+      try {
+        const resolver = new dns.Resolver();
+        resolver.setServers([resolverIp]);
+        const names = (await resolver.resolveNs(baseTarget)).map((n) => n.toLowerCase().replace(/\.$/, ""));
+        names.forEach((n) => found.add(n));
+        if (expected.every((ns) => names.includes(ns))) delegated = true;
+      } catch {
+        // No NS answer from this resolver — treated as not delegated
+      }
+    }
+
+    return { delegated, found: [...found], expected };
+  }
+
+  /**
+   * Switches a domain between CONNECTED (DNS stays with the user's provider) and
+   * MANAGED (Vexlyx CoreDNS is authoritative). Enabling requires a verified domain
+   * whose nameservers are already delegated to us; disabling is blocked while the
+   * domain has mailboxes, since their MX/DKIM/SPF records live in the zone.
+   */
+  async setDnsMode(userId: string, domainId: string, mode: DnsMode): Promise<Domain> {
+    const domain = await this.getDomainOrThrow(userId, domainId);
+    if (domain.dnsMode === mode) return domain;
+
+    if (mode === "MANAGED") {
+      if (domain.status !== "ACTIVE") {
+        throw new DomainError(
+          "Verify domain ownership before hosting its DNS on Vexlyx",
+          "DOMAIN_NOT_VERIFIED",
+          409,
+        );
+      }
+      const delegation = await this.checkDelegation(userId, domainId);
+      if (!delegation.delegated) {
+        throw new DomainError(
+          `Nameservers are not pointed at ${delegation.expected.join(", ")} yet`,
+          "NS_NOT_DELEGATED",
+          409,
+        );
+      }
+    } else {
+      const mailboxCount = await this.prisma.mailbox.count({ where: { domainId } });
+      if (mailboxCount > 0) {
+        throw new DomainError(
+          "Remove this domain's mailboxes before switching DNS back to your own provider",
+          "DNS_MODE_MAIL_ACTIVE",
+          409,
+        );
+      }
+    }
+
+    const updated = await this.prisma.domain.update({
+      where: { id: domain.id },
+      data: { dnsMode: mode },
+    });
+
+    if (mode === "MANAGED") {
+      await this.initializeDefaultRecords(userId, domainId);
+    } else {
+      this.removeZoneFile(domain.hostname);
+    }
+
+    return updated;
+  }
+
+  /**
+   * Throws 409 DNS_NOT_MANAGED unless Vexlyx is authoritative for this domain.
+   */
+  async assertManaged(userId: string, domainId: string): Promise<void> {
+    const domain = await this.getDomainOrThrow(userId, domainId);
+    if (domain.dnsMode !== "MANAGED") {
+      throw new DomainError(
+        "DNS for this domain is not hosted on Vexlyx",
+        "DNS_NOT_MANAGED",
+        409,
+      );
+    }
+  }
+
+  private removeZoneFile(hostname: string): void {
+    const cleanHost = hostname.startsWith("*.") ? hostname.slice(2) : hostname;
+    try {
+      fs.rmSync(path.join(getCoreDnsZonesDir(), `${cleanHost}.db`), { force: true });
+    } catch {
+      // Non-fatal if filesystem is temporarily restricted
+    }
+  }
+
+  /**
+   * Write RFC 1035 zone file to CoreDNS zones directory. No-op unless the
+   * domain is MANAGED, so connect-only domains never get a zone we don't serve.
    */
   async syncZoneFile(hostname: string, domainId: string): Promise<void> {
     try {
+      const domain = await this.prisma.domain.findUnique({
+        where: { id: domainId },
+        select: { dnsMode: true },
+      });
+      if (domain?.dnsMode !== "MANAGED") return;
+
       const records = await this.prisma.dnsRecord.findMany({
         where: { domainId },
         orderBy: [{ type: "asc" }, { name: "asc" }],

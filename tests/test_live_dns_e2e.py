@@ -111,6 +111,15 @@ def main():
     domain_id = domain["id"]
     print(f"  ✓ Domain created with ID: {domain_id} (Status: {domain['status']})")
 
+    # DNS hosting is opt-in (F5.23): verify ownership (mock) and switch to MANAGED
+    status, _ = api_request(f"/api/domains/{domain_id}/verify?mock=true", "POST")
+    assert status == 200, "mock verification failed"
+    status, mode_res = api_request(f"/api/domains/{domain_id}/dns-mode", "PATCH", {"mode": "MANAGED"})
+    if status != 200:
+        print(f"  ✗ Failed to enable managed DNS: {mode_res}")
+        sys.exit(1)
+    print("  ✓ DNS hosting enabled (MANAGED)")
+
     zone_file = ZONES_DIR / f"{test_hostname}.db"
 
     try:

@@ -1,4 +1,4 @@
-import type { FastifyInstance, FastifyReply } from "fastify";
+import type { FastifyInstance, FastifyReply, FastifyRequest } from "fastify";
 import { DomainService, DomainError } from "./service.js";
 import { DnsService } from "./dns-service.js";
 import { SslService } from "./ssl-service.js";
@@ -12,6 +12,7 @@ import {
   CreateDnsRecordSchema,
   UpdateDnsRecordSchema,
   ImportZoneFileSchema,
+  SetDnsModeSchema,
   UploadCertificateSchema,
   ProvisionSslSchema,
   UpdateSslSettingsSchema,
@@ -41,6 +42,56 @@ export async function domainRoutes(app: FastifyInstance) {
   const service = new DomainService(app.prisma, auditLog);
   const dnsService = new DnsService(app.prisma);
   const sslService = new SslService(app.prisma);
+
+  const requireManagedDns = async (
+    request: FastifyRequest,
+    reply: FastifyReply,
+  ): Promise<FastifyReply | void> => {
+    try {
+      const { id } = DomainIdParamSchema.parse(request.params);
+      await dnsService.assertManaged(request.userId!, id);
+    } catch (err) {
+      handleDomainError(err, reply);
+      return reply;
+    }
+  };
+
+  // ---------------------------------------------------------------------------
+  // POST /api/domains/:id/dns-mode/check — are the nameservers delegated to us?
+  // ---------------------------------------------------------------------------
+  app.post(
+    "/:id/dns-mode/check",
+    { preHandler: [app.requireAuth] },
+    async (request, reply) => {
+      try {
+        const { id } = DomainIdParamSchema.parse(request.params);
+        return await dnsService.checkDelegation(request.userId!, id);
+      } catch (err) {
+        handleDomainError(err, reply);
+      }
+    },
+  );
+
+  // ---------------------------------------------------------------------------
+  // PATCH /api/domains/:id/dns-mode — switch CONNECTED <-> MANAGED
+  // ---------------------------------------------------------------------------
+  app.patch(
+    "/:id/dns-mode",
+    { preHandler: [app.requireAuth] },
+    async (request, reply) => {
+      try {
+        const { id } = DomainIdParamSchema.parse(request.params);
+        const { mode } = SetDnsModeSchema.parse(request.body);
+        const domain = await dnsService.setDnsMode(request.userId!, id, mode);
+        await auditLog.log(request.userId!, "domain.dns_mode_changed", { type: "Domain", id }, {
+          after: { dnsMode: domain.dnsMode },
+        });
+        return { id: domain.id, dnsMode: domain.dnsMode };
+      } catch (err) {
+        handleDomainError(err, reply);
+      }
+    },
+  );
 
   // ---------------------------------------------------------------------------
   // GET /api/domains — list domains
@@ -153,7 +204,7 @@ export async function domainRoutes(app: FastifyInstance) {
   // ---------------------------------------------------------------------------
   app.get(
     "/:id/dns",
-    { preHandler: [app.requireAuth] },
+    { preHandler: [app.requireAuth, requireManagedDns] },
     async (request, reply) => {
       try {
         const { id } = DomainIdParamSchema.parse(request.params);
@@ -169,7 +220,7 @@ export async function domainRoutes(app: FastifyInstance) {
   // ---------------------------------------------------------------------------
   app.post(
     "/:id/dns",
-    { preHandler: [app.requireAuth] },
+    { preHandler: [app.requireAuth, requireManagedDns] },
     async (request, reply) => {
       try {
         const { id } = DomainIdParamSchema.parse(request.params);
@@ -188,7 +239,7 @@ export async function domainRoutes(app: FastifyInstance) {
   // ---------------------------------------------------------------------------
   app.post(
     "/:id/dns/defaults",
-    { preHandler: [app.requireAuth] },
+    { preHandler: [app.requireAuth, requireManagedDns] },
     async (request, reply) => {
       try {
         const { id } = DomainIdParamSchema.parse(request.params);
@@ -204,7 +255,7 @@ export async function domainRoutes(app: FastifyInstance) {
   // ---------------------------------------------------------------------------
   app.patch(
     "/:id/dns/:recordId",
-    { preHandler: [app.requireAuth] },
+    { preHandler: [app.requireAuth, requireManagedDns] },
     async (request, reply) => {
       try {
         const { id, recordId } = DomainRecordParamSchema.parse(request.params);
@@ -221,7 +272,7 @@ export async function domainRoutes(app: FastifyInstance) {
   // ---------------------------------------------------------------------------
   app.delete(
     "/:id/dns/:recordId",
-    { preHandler: [app.requireAuth] },
+    { preHandler: [app.requireAuth, requireManagedDns] },
     async (request, reply) => {
       try {
         const { id, recordId } = DomainRecordParamSchema.parse(request.params);
@@ -238,7 +289,7 @@ export async function domainRoutes(app: FastifyInstance) {
   // ---------------------------------------------------------------------------
   app.get(
     "/:id/dns/export",
-    { preHandler: [app.requireAuth] },
+    { preHandler: [app.requireAuth, requireManagedDns] },
     async (request, reply) => {
       try {
         const { id } = DomainIdParamSchema.parse(request.params);
@@ -257,7 +308,7 @@ export async function domainRoutes(app: FastifyInstance) {
   // ---------------------------------------------------------------------------
   app.post(
     "/:id/dns/import",
-    { preHandler: [app.requireAuth] },
+    { preHandler: [app.requireAuth, requireManagedDns] },
     async (request, reply) => {
       try {
         const { id } = DomainIdParamSchema.parse(request.params);
@@ -279,7 +330,7 @@ export async function domainRoutes(app: FastifyInstance) {
   // ---------------------------------------------------------------------------
   app.post(
     "/:id/dns/:recordId/propagation",
-    { preHandler: [app.requireAuth] },
+    { preHandler: [app.requireAuth, requireManagedDns] },
     async (request, reply) => {
       try {
         const { id, recordId } = DomainRecordParamSchema.parse(request.params);

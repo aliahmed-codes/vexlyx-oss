@@ -52,6 +52,8 @@ import {
 } from "@/components/ui/select";
 import { fetchAPI, ApiRequestError } from "@/lib/api";
 import { useDnsRecords } from "@/hooks/useDnsRecords";
+import { useDnsMode } from "@/hooks/useDnsMode";
+import { DnsHostingOptIn } from "@/components/domains/DnsHostingOptIn";
 import { cn } from "@/lib/utils";
 import { refreshIconClassName } from "@/hooks/useRefreshAnimation";
 import type {
@@ -153,8 +155,12 @@ export default function DomainDnsPage() {
     checkPropagation,
   } = useDnsRecords({
     domainId,
-    autoFetch: Boolean(domainId),
+    autoFetch: Boolean(domainId) && domain?.dnsMode === "MANAGED",
   });
+
+  const isManaged = domain?.dnsMode === "MANAGED";
+  const { delegation, isSwitching, setMode } = useDnsMode(isManaged ? domainId : undefined);
+  const [stopDialogOpen, setStopDialogOpen] = useState(false);
 
   // Filter & Search states
   const [selectedType, setSelectedType] = useState<string>("ALL");
@@ -316,7 +322,7 @@ export default function DomainDnsPage() {
   const handleInitDefaults = async () => {
     try {
       await initializeDefaults();
-      toast.success("Recommended DNS records configured (Apex A, www CNAME, ns1/ns2 NS)");
+      toast.success("Recommended DNS records configured (Apex A, www CNAME, NS)");
     } catch (err: unknown) {
       toast.error(err instanceof Error ? err.message : "Failed to initialize default records");
     }
@@ -375,6 +381,17 @@ export default function DomainDnsPage() {
     }
   };
 
+  const handleStopHosting = async () => {
+    try {
+      await setMode("CONNECTED");
+      toast.success("DNS is back with your own provider");
+      setStopDialogOpen(false);
+      await fetchDomain();
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Failed to stop DNS hosting");
+    }
+  };
+
   if (isDomainLoading || !domain) {
     return (
       <div className="space-y-6">
@@ -391,6 +408,10 @@ export default function DomainDnsPage() {
         <Skeleton className="h-96 w-full" />
       </div>
     );
+  }
+
+  if (domain.dnsMode !== "MANAGED") {
+    return <DnsHostingOptIn domain={domain} onEnabled={() => void fetchDomain()} />;
   }
 
   return (
@@ -495,7 +516,7 @@ export default function DomainDnsPage() {
                   </a>
                 </div>
                 <p className="text-xs text-muted-foreground">
-                  Authoritative DNS Zone file powered by CoreDNS &amp; Vexlyx Cloud Nameservers.
+                  Authoritative DNS zone served by Vexlyx&rsquo;s CoreDNS nameservers.
                 </p>
               </div>
             </div>
@@ -504,12 +525,11 @@ export default function DomainDnsPage() {
           <div className="flex items-center gap-3 flex-wrap">
             <div className="rounded-md border border-border bg-muted/40 p-2 text-xs flex items-center gap-2">
               <span className="text-muted-foreground font-medium">Nameservers:</span>
-              <Badge variant="outline" className="font-mono text-[11px] py-0 px-1.5">
-                ns1.vexlyx.com
-              </Badge>
-              <Badge variant="outline" className="font-mono text-[11px] py-0 px-1.5">
-                ns2.vexlyx.com
-              </Badge>
+              {(delegation?.expected ?? []).map((ns) => (
+                <Badge key={ns} variant="outline" className="font-mono text-[11px] py-0 px-1.5">
+                  {ns}
+                </Badge>
+              ))}
             </div>
 
             <Badge
@@ -524,18 +544,24 @@ export default function DomainDnsPage() {
       </div>
 
       {/* ----------------------------------------------------------------- */}
-      {/* Optional-Feature Explainer */}
+      {/* Hosting status + opt-out */}
       {/* ----------------------------------------------------------------- */}
-      <div className="flex gap-3 rounded-lg border border-indigo-500/20 bg-indigo-500/5 p-4">
-        <Network className="h-4 w-4 shrink-0 text-indigo-500 mt-0.5" />
-        <p className="text-xs text-muted-foreground leading-relaxed">
-          <span className="font-medium text-foreground">This is optional.</span> Hosting DNS
-          here makes Vexlyx the authoritative nameserver for {domain.hostname} &mdash; every
-          record for the domain, not just this project, moves here. It&rsquo;s unrelated to
-          whether {domain.hostname} routes to your project: the A/TXT records you add at your
-          existing registrar already handle that on their own, with no need to ever visit this
-          page.
-        </p>
+      <div className="flex flex-col gap-3 rounded-lg border border-indigo-500/20 bg-indigo-500/5 p-4 sm:flex-row sm:items-center sm:justify-between">
+        <div className="flex gap-3">
+          <Network className="h-4 w-4 shrink-0 text-indigo-500 mt-0.5" />
+          <p className="text-xs text-muted-foreground leading-relaxed">
+            Vexlyx is the authoritative DNS host for {domain.hostname}. If you&rsquo;d rather keep
+            DNS at your own registrar or provider, you can stop hosting here.
+          </p>
+        </div>
+        <Button
+          variant="outline"
+          size="sm"
+          onClick={() => setStopDialogOpen(true)}
+          className="h-8 shrink-0 text-xs"
+        >
+          Stop hosting DNS
+        </Button>
       </div>
 
       {/* ----------------------------------------------------------------- */}
@@ -1210,6 +1236,32 @@ export default function DomainDnsPage() {
               className="h-8 text-xs"
             >
               {isDeleting ? "Deleting..." : "Delete Record"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={stopDialogOpen} onOpenChange={setStopDialogOpen}>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle>Stop hosting DNS on Vexlyx?</DialogTitle>
+            <DialogDescription>
+              Vexlyx will stop serving DNS for {domain.hostname}. Before confirming, point your
+              nameservers back at your own provider and recreate any records you need there, or the
+              domain will stop resolving. Your records here are kept if you enable hosting again.
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter className="flex-col sm:flex-row gap-2">
+            <Button type="button" variant="outline" onClick={() => setStopDialogOpen(false)}>
+              Cancel
+            </Button>
+            <Button
+              type="button"
+              variant="destructive"
+              onClick={() => void handleStopHosting()}
+              disabled={isSwitching}
+            >
+              Stop hosting DNS
             </Button>
           </DialogFooter>
         </DialogContent>

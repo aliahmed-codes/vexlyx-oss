@@ -80,6 +80,8 @@ export type {
 
 export {
   DomainStatusSchema,
+  DnsModeSchema,
+  SetDnsModeSchema,
   HostnameSchema,
   CreateDomainSchema,
   DomainListQuerySchema,
@@ -89,6 +91,9 @@ export {
 } from "./schemas/domains.js";
 export type {
   DomainStatus,
+  DnsMode,
+  SetDnsModeInput,
+  DnsDelegationCheckResponse,
   CreateDomainInput,
   DomainListQuery,
   DomainVerificationInstructions,

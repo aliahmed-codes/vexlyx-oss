@@ -380,18 +380,10 @@ http:
         pathPrefix,
         userId,
         projectId: input.projectId ?? null,
-        ...(!isInheritedActive
-          ? {
-              dnsRecords: {
-                create: {
-                  type: "TXT",
-                  name: buildVerificationInstructions(input.hostname, verificationToken).recordName,
-                  value: `vexlyx-verification=${verificationToken}`,
-                  ttl: 300,
-                },
-              },
-            }
-          : {}),
+        // Connect-only by default: no DnsRecord rows are created (the verification
+        // TXT is checked against the token, not a stored record). A subdomain of a
+        // parent Vexlyx already hosts DNS for stays in that zone.
+        dnsMode: parentDomain?.dnsMode ?? "CONNECTED",
       },
       include: {
         project: {

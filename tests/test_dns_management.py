@@ -175,9 +175,11 @@ class TestLiveDnsApiEndpoints(unittest.TestCase):
             ("GET", f"{API_BASE_URL}/api/domains/test-domain-id/dns/export"),
             ("POST", f"{API_BASE_URL}/api/domains/test-domain-id/dns/import"),
             ("POST", f"{API_BASE_URL}/api/domains/test-domain-id/dns/test-record-id/propagation"),
+            ("PATCH", f"{API_BASE_URL}/api/domains/test-domain-id/dns-mode"),
+            ("POST", f"{API_BASE_URL}/api/domains/test-domain-id/dns-mode/check"),
         ]
 
-        dummy_body = json.dumps({"type": "A", "name": "@", "value": "192.0.2.1"}).encode("utf-8")
+        dummy_body = json.dumps({"type": "A", "name": "@", "value": "192.0.2.1", "mode": "MANAGED"}).encode("utf-8")
         for method, url in endpoints:
             data = dummy_body if method in ("POST", "PATCH") else None
             req = urllib.request.Request(url, data=data, method=method)

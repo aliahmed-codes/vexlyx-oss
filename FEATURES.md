@@ -2264,6 +2264,32 @@ Surfaced directly while live-testing F5.21 against a real Duplicator (WordPress 
 
 ---
 
+### F5.25 — Per-Domain DNS Mode: Connect-Only vs. Hosted on Vexlyx
+**Status:** 🟢 COMPLETED
+
+**Description:**
+F5.22 only relabeled the DNS-hosting UI; nothing was gated. A user who just connects a domain to a project (DNS stays at their registrar, A/TXT records already route it) still saw DNS records, nameserver badges and the DNS manager, and every domain got a TXT `DnsRecord` row and CoreDNS zone file it never used. Each domain now has a persisted `dnsMode` (`CONNECTED` default, or `MANAGED`). DNS hosting is a deliberate opt-in: point nameservers at Vexlyx, pass a delegation check, then enable.
+
+**Acceptance Criteria:**
+- [x] `Domain.dnsMode` (`CONNECTED` | `MANAGED`), default `CONNECTED`; migration backfills `MANAGED` for domains with any record beyond the verification TXT
+- [x] Connect-only domains create no `DnsRecord` rows and no CoreDNS zone file
+- [x] All `/api/domains/:id/dns*` endpoints return 409 `DNS_NOT_MANAGED` unless the domain is `MANAGED`
+- [x] `POST /:id/dns-mode/check` (NS delegation check) and `PATCH /:id/dns-mode`; enabling requires a verified domain and delegated nameservers; disabling is blocked while mailboxes exist
+- [x] `/domains` and the SSL page show DNS-hosting UI only for `MANAGED` domains; `/domains/[id]/dns` shows an opt-in flow for connected domains and a "Stop hosting DNS" action for managed ones
+- [x] Instructions modal shared between `/domains` and the project domain tab (TXT + A record), so they can't drift
+- [x] Nameservers configurable via `DNS_NAMESERVERS` instead of hard-coded
+
+**Test Plan:**
+1. Add a domain → no DNS button, no zone file, `GET /api/domains/:id/dns` returns 409
+2. Visit `/domains/[id]/dns` → opt-in view (nameservers, check, enable)
+3. Delegate NS + enable → records/zone file appear, DNS button shows
+4. Stop hosting → zone file removed, UI hides DNS features, records kept for re-enable
+
+**Developer Docs:**
+- **Location:** `docs/dev/dns-management.md` (§9)
+
+---
+
 ## Phase 6: Ecosystem & Launch
 
 ### F6.1 — Complete Documentation

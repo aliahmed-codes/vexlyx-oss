@@ -69,6 +69,13 @@ enum DomainStatus {
   ERROR
 }
 
+/// Who serves DNS for a domain: the user's own registrar/DNS provider (CONNECTED)
+/// or Vexlyx's CoreDNS after nameserver delegation (MANAGED).
+enum DnsMode {
+  CONNECTED
+  MANAGED
+}
+
 /// Supported database engines that users can provision.
 enum DatabaseType {
   POSTGRESQL
@@ -296,6 +303,8 @@ model Domain {
   hostname          String       @unique
   status            DomainStatus @default(PENDING)
   sslEnabled        Boolean      @default(false) @map("ssl_enabled")
+  /// CONNECTED = DNS stays with the user's provider; MANAGED = Vexlyx CoreDNS is authoritative (F5.23).
+  dnsMode           DnsMode      @default(CONNECTED) @map("dns_mode")
   /// Unique verification token expected in DNS TXT record for domain ownership validation (F3.1).
   verificationToken String?      @map("verification_token")
   /// Optional path prefix routing (e.g. /api or /blog)

@@ -104,6 +104,16 @@ const envSchema = z.object({
     .string()
     .optional()
     .transform((v) => (v ? v : undefined)),
+  // Nameservers users delegate to when opting into "Managed" DNS (F5.23).
+  DNS_NAMESERVERS: z
+    .string()
+    .default("ns1.vexlyx.com,ns2.vexlyx.com")
+    .transform((v) =>
+      v
+        .split(",")
+        .map((s) => s.trim().toLowerCase())
+        .filter(Boolean),
+    ),
   // Python interpreter used to spawn system/python/*.py scripts (F5.14).
   // Defaults to "python" on win32 / "python3" elsewhere when unset — only
   // set this to override that default (e.g. a venv interpreter, or a

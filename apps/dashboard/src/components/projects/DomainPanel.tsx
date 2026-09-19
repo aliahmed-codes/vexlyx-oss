@@ -6,8 +6,6 @@ import {
   Globe,
   Plus,
   ExternalLink,
-  Copy,
-  Check,
   Trash2,
   CheckCircle2,
   AlertCircle,
@@ -33,6 +31,7 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { useDomains } from "@/hooks/useDomains";
+import { DomainConnectInstructions } from "@/components/domains/DomainConnectInstructions";
 import { cn } from "@/lib/utils";
 import { refreshIconClassName } from "@/hooks/useRefreshAnimation";
 import type { DomainResponse, DomainStatus, Project } from "@vexlyx/shared";
@@ -82,7 +81,6 @@ export function DomainPanel({ project }: DomainPanelProps) {
   // Verification instructions modal state
   const [instructionsDomain, setInstructionsDomain] = useState<DomainResponse | null>(null);
   const [instructionsModalOpen, setInstructionsModalOpen] = useState(false);
-  const [copiedField, setCopiedField] = useState<string | null>(null);
 
   // Verifying state per domain ID
   const [verifyingId, setVerifyingId] = useState<string | null>(null);
@@ -90,13 +88,6 @@ export function DomainPanel({ project }: DomainPanelProps) {
   // Delete confirmation modal state
   const [deleteTarget, setDeleteTarget] = useState<DomainResponse | null>(null);
   const [isDeleting, setIsDeleting] = useState(false);
-
-  const copyToClipboard = (text: string, field: string) => {
-    void navigator.clipboard.writeText(text);
-    setCopiedField(field);
-    toast.success("Copied to clipboard");
-    setTimeout(() => setCopiedField(null), 2000);
-  };
 
   const handleAddDomain = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -405,109 +396,7 @@ export function DomainPanel({ project }: DomainPanelProps) {
             </DialogDescription>
           </DialogHeader>
 
-          {instructionsDomain && (() => {
-            const routingRecord = instructionsDomain.verificationInstructions?.routingRecord;
-            const publicIp = routingRecord?.publicIp ?? null;
-            return (
-            <div className="space-y-4 py-2">
-              <div className="rounded-lg border border-border bg-muted/40 p-4 space-y-3">
-                <div className="grid grid-cols-3 gap-2 text-xs">
-                  <div className="font-semibold text-muted-foreground">Record Type</div>
-                  <div className="font-semibold text-muted-foreground">Name / Host</div>
-                  <div className="font-semibold text-muted-foreground">TTL</div>
-                  <div className="font-mono text-foreground font-bold">TXT</div>
-                  <div className="font-mono text-foreground break-all">
-                    _vexlyx-challenge.{instructionsDomain.hostname}
-                  </div>
-                  <div className="font-mono text-foreground">300 (or Auto)</div>
-                </div>
-
-                <div className="space-y-1 pt-2 border-t border-border">
-                  <div className="flex items-center justify-between">
-                    <Label className="text-xs font-semibold text-muted-foreground">
-                      TXT Record Value
-                    </Label>
-                    <Button
-                      variant="ghost"
-                      size="sm"
-                      onClick={() =>
-                        copyToClipboard(
-                          instructionsDomain.verificationInstructions?.recordValue ??
-                            `vexlyx-verification=${instructionsDomain.verificationToken ?? ""}`,
-                          "txt-value",
-                        )
-                      }
-                      className="h-6 px-2 text-[11px] gap-1 text-primary hover:text-primary"
-                    >
-                      {copiedField === "txt-value" ? (
-                        <>
-                          <Check className="h-3 w-3" />
-                          Copied
-                        </>
-                      ) : (
-                        <>
-                          <Copy className="h-3 w-3" />
-                          Copy Value
-                        </>
-                      )}
-                    </Button>
-                  </div>
-                  <div className="rounded border border-border bg-background p-2 font-mono text-xs text-foreground break-all select-all">
-                    {instructionsDomain.verificationInstructions?.recordValue ??
-                      `vexlyx-verification=${instructionsDomain.verificationToken ?? ""}`}
-                  </div>
-                </div>
-              </div>
-
-              <div className="rounded-lg border border-border bg-muted/40 p-4 space-y-3">
-                <p className="text-xs text-muted-foreground">
-                  The TXT record above only proves you own this domain — it doesn&rsquo;t route traffic
-                  here. Add this <span className="font-medium text-foreground">A record</span> too, or
-                  the domain will verify successfully but show nothing when visited.
-                </p>
-                {routingRecord && publicIp ? (
-                  <>
-                    <div className="grid grid-cols-3 gap-2 text-xs">
-                      <div className="font-semibold text-muted-foreground">Record Type</div>
-                      <div className="font-semibold text-muted-foreground">Name / Host</div>
-                      <div className="font-semibold text-muted-foreground">Value</div>
-                      <div className="font-mono text-foreground font-bold">A</div>
-                      <div className="font-mono text-foreground break-all">{routingRecord.recordName}</div>
-                      <div className="font-mono text-foreground break-all">{publicIp}</div>
-                    </div>
-                    <Button
-                      variant="ghost"
-                      size="sm"
-                      onClick={() => copyToClipboard(publicIp, "a-value")}
-                      className="h-6 px-2 text-[11px] gap-1 text-primary hover:text-primary"
-                    >
-                      {copiedField === "a-value" ? (
-                        <>
-                          <Check className="h-3 w-3" />
-                          Copied
-                        </>
-                      ) : (
-                        <>
-                          <Copy className="h-3 w-3" />
-                          Copy IP
-                        </>
-                      )}
-                    </Button>
-                  </>
-                ) : (
-                  <p className="text-xs text-muted-foreground">
-                    This server&rsquo;s public IP hasn&rsquo;t been detected — check the Settings page,
-                    or ask your admin for the server&rsquo;s IP to use as the A record value.
-                  </p>
-                )}
-              </div>
-
-              <div className="rounded-lg border border-amber-500/20 bg-amber-500/5 p-3 text-xs text-amber-700 dark:text-amber-400">
-                DNS propagation typically takes a few minutes, but can occasionally take up to 24-48 hours depending on your registrar TTL.
-              </div>
-            </div>
-            );
-          })()}
+          {instructionsDomain && <DomainConnectInstructions domain={instructionsDomain} />}
 
           <DialogFooter className="flex-col sm:flex-row gap-2">
             <Button

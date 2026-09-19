@@ -211,3 +211,13 @@ Vexlyx supports two independent, non-overlapping ways for a domain to end up poi
 | **Prerequisite** | None beyond DNS access at the existing registrar. | Changing the domain's NS records at the registrar to point at Vexlyx — a much bigger, riskier step (it moves *all* DNS, including any existing MX/email records) than adding one A record. |
 
 Before F5.22, `/domains` showed a "Manage DNS" button styled identically to "Manage SSL" on every domain card, implying both were required next steps. It has been relabeled **"Host DNS on Vexlyx"** with a tooltip clarifying it's optional and what it actually delegates (`apps/dashboard/src/app/(panel)/domains/page.tsx`). The zone page itself now opens with an explainer callout making the same distinction before the metric cards (`apps/dashboard/src/app/(panel)/domains/[id]/dns/page.tsx`). No behavior in either flow changed — this was a labeling/clarity fix only.
+
+### F5.25 update: the mode is now persisted and enforced
+
+F5.22 above was labeling only. As of F5.25 each domain has a `dnsMode`:
+
+- **`CONNECTED`** (default): DNS stays with the user's provider. No `DnsRecord` rows or CoreDNS zone file are created, `syncZoneFile` is a no-op, and every `/api/domains/:id/dns*` endpoint returns 409 `DNS_NOT_MANAGED`. The dashboard hides the DNS button on `/domains` and the SSL page, and `/domains/[id]/dns` shows the opt-in flow instead of the editor.
+- **`MANAGED`**: Vexlyx CoreDNS is authoritative. Reached via `PATCH /api/domains/:id/dns-mode` `{ "mode": "MANAGED" }`, which requires an `ACTIVE` (verified) domain and a passing NS delegation check (`POST /:id/dns-mode/check`, queries 1.1.1.1/8.8.8.8/9.9.9.9 for the nameservers in `DNS_NAMESERVERS`). Enabling seeds the default records and writes the zone file.
+- **Switching back** removes the zone file but keeps `DnsRecord` rows, so re-enabling is lossless. It is blocked (409 `DNS_MODE_MAIL_ACTIVE`) while the domain has mailboxes, since their MX/SPF/DKIM records live in the zone.
+- Subdomains inherit the parent's mode on creation. Existing domains were backfilled by the `add_domain_dns_mode` migration: `MANAGED` if they had any record beyond the `_vexlyx-challenge` TXT, else `CONNECTED`.
+- Testing: with `NODE_ENV=test` or `VEXLYX_MOCK_DNS=true` the delegation check reports delegated; verify a domain with `POST /:id/verify?mock=true` first.

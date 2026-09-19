@@ -22,6 +22,7 @@ export const AUDIT_ACTIONS = [
   "project.deleted",
   "domain.created",
   "domain.deleted",
+  "domain.dns_mode_changed",
   "database.created",
   "database.deleted",
   "mailbox.created",

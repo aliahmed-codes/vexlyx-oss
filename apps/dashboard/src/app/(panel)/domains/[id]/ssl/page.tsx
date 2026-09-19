@@ -221,7 +221,7 @@ export default function DomainSslPage() {
             <span>Refresh</span>
           </Button>
 
-          {domain && (
+          {domain?.dnsMode === "MANAGED" && (
             <Button
               asChild
               variant="outline"

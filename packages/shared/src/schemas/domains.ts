@@ -7,6 +7,20 @@ import { z } from "zod";
 export const DomainStatusSchema = z.enum(["PENDING", "ACTIVE", "ERROR"]);
 export type DomainStatus = z.infer<typeof DomainStatusSchema>;
 
+export const DnsModeSchema = z.enum(["CONNECTED", "MANAGED"]);
+export type DnsMode = z.infer<typeof DnsModeSchema>;
+
+export const SetDnsModeSchema = z.object({
+  mode: DnsModeSchema,
+});
+export type SetDnsModeInput = z.infer<typeof SetDnsModeSchema>;
+
+export interface DnsDelegationCheckResponse {
+  delegated: boolean;
+  found: string[];
+  expected: string[];
+}
+
 // ---------------------------------------------------------------------------
 // Hostname validator & helpers
 // ---------------------------------------------------------------------------
@@ -167,6 +181,7 @@ export interface DomainResponse {
   id: string;
   hostname: string;
   status: DomainStatus;
+  dnsMode: DnsMode;
   sslEnabled: boolean;
   userId: string;
   projectId: string | null;

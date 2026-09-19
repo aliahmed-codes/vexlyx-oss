@@ -97,6 +97,9 @@ class TestMailAuthLiveEndToEnd(unittest.TestCase):
             self.skipTest("Could not create a test domain (dev stack not fully running)")
             return
         self.domain_id = domain["id"] if "id" in domain else domain["domain"]["id"]
+        # DNS hosting is opt-in (F5.23): mail records live in a Vexlyx-served zone
+        self._post(f"{API_BASE_URL}/api/domains/{self.domain_id}/verify?mock=true")
+        self._request(f"{API_BASE_URL}/api/domains/{self.domain_id}/dns-mode", "PATCH", {"mode": "MANAGED"})
 
     def tearDown(self):
         for mailbox_id in self._created_mailbox_ids:
