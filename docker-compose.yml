@@ -4,7 +4,7 @@ services:
     container_name: vexlyx-postgres
     restart: unless-stopped
     ports:
-      - "5432:5432"
+      - "5434:5432"
     environment:
       POSTGRES_USER: vexlyx
       POSTGRES_PASSWORD: vexlyx_dev
@@ -50,7 +50,7 @@ services:
     container_name: vexlyx-redis
     restart: unless-stopped
     ports:
-      - "6379:6379"
+      - "6380:6379"
     command: redis-server --maxmemory 256mb --maxmemory-policy allkeys-lru --appendonly yes
     volumes:
       - vexlyx_redis_data:/data
@@ -90,9 +90,9 @@ services:
     container_name: vexlyx-traefik
     restart: unless-stopped
     ports:
-      - "80:80"
-      - "443:443"
-      - "8080:8080"
+      - "8000:80"
+      - "8443:443"
+      - "8090:8080"
     volumes:
       - ./docker/traefik/traefik.yml:/etc/traefik/traefik.yml:ro
       - ./docker/traefik/dynamic:/etc/traefik/dynamic:ro
