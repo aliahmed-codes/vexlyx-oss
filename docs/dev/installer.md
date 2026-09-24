@@ -3,7 +3,7 @@
 Automated, idempotent installation of Vexlyx onto a fresh Ubuntu 24.04 server via:
 
 ```bash
-curl -fsSL https://get.vexlyx.com | bash
+curl -fsSL https://vexlyx.atlantiqs.org/install.sh | bash
 ```
 
 ## What it does
@@ -90,7 +90,7 @@ To add a new step, drop a numbered file in `system/scripts/install/steps/` (it's
 ## Security notes
 
 - **The api container runs as root.** It needs `/var/run/docker.sock` for Docker-outside-of-Docker, and socket access is already root-equivalent on the host (anyone who can reach it can `docker run --privileged`) — restricting the container's internal UID would add configuration complexity (matching the host's docker.sock group GID) without a real additional security boundary. The dashboard container has no such requirement and runs as an unprivileged user.
-- **Interactive prompts only work when stdin is a real TTY.** A plain `curl -fsSL https://get.vexlyx.com | bash` has no TTY on stdin (bash is reading the script itself from that pipe), so `VEXLYX_ADMIN_PASSWORD` and friends fall back to generated defaults there by design — this is deliberate, not a bug. To be prompted interactively, download the script first: `curl -fsSL https://get.vexlyx.com -o install.sh && sudo bash install.sh`.
+- **Interactive prompts only work when stdin is a real TTY.** A plain `curl -fsSL https://vexlyx.atlantiqs.org/install.sh | bash` has no TTY on stdin (bash is reading the script itself from that pipe), so `VEXLYX_ADMIN_PASSWORD` and friends fall back to generated defaults there by design — this is deliberate, not a bug. To be prompted interactively, download the script first: `curl -fsSL https://vexlyx.atlantiqs.org/install.sh -o install.sh && sudo bash install.sh`.
 - **The admin password is never persisted** — only its Argon2id hash reaches the database; it's shown once in the final summary if auto-generated.
 - **UFW rules are added before the firewall is enabled**, and the SSH rule is verified present immediately before `ufw --force enable` — a detection failure aborts rather than risking a lockout.
 - **`adminer`** (an unauthenticated raw DB browser, fine for dev) is gated behind `--profile debug` in the prod overlay so a plain `up -d` never starts it.

@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # ==============================================================================
 # Vexlyx — One-Line Server Installer (F5.1)
-# Usage: curl -fsSL https://get.vexlyx.com | bash
+# Usage: curl -fsSL https://vexlyx.atlantiqs.org/install.sh | bash
 #
 # This is the thin, public entrypoint: it only figures out where the Vexlyx
 # checkout lives (cloning/updating it if needed) and hands off to the real
@@ -12,7 +12,7 @@
 set -euo pipefail
 
 VEXLYX_HOME="${VEXLYX_HOME:-/opt/vexlyx}"
-VEXLYX_REPO_URL="${VEXLYX_REPO_URL:-https://github.com/aliahmed-codes/vexlyx.git}"
+VEXLYX_REPO_URL="${VEXLYX_REPO_URL:-https://github.com/atlantiqs-org/vexlyx.git}"
 VEXLYX_REPO_REF="${VEXLYX_REPO_REF:-main}"
 
 if [[ ${EUID} -ne 0 ]]; then

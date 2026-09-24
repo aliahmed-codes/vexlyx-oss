@@ -14,7 +14,7 @@ collect_config() {
 
   env_or_prompt VEXLYX_DOMAIN "Panel domain (e.g. panel.example.com)" ""
   if [[ -z "${VEXLYX_DOMAIN}" ]]; then
-    die "VEXLYX_DOMAIN is required. Re-run with: VEXLYX_DOMAIN=panel.example.com curl -fsSL https://get.vexlyx.com | bash"
+    die "VEXLYX_DOMAIN is required. Re-run with: VEXLYX_DOMAIN=panel.example.com curl -fsSL https://vexlyx.atlantiqs.org/install.sh | bash"
   fi
 
   # Base domain deployed projects get subdomains under: {slug}.<base-domain>
@@ -43,7 +43,7 @@ collect_config() {
   env_or_prompt VEXLYX_MAIL_DOMAIN "Mail domain" "${VEXLYX_DOMAIN}"
 
   VEXLYX_ENABLE_PUBLIC_DNS="${VEXLYX_ENABLE_PUBLIC_DNS:-false}"
-  VEXLYX_REPO_URL="${VEXLYX_REPO_URL:-https://github.com/aliahmed-codes/vexlyx.git}"
+  VEXLYX_REPO_URL="${VEXLYX_REPO_URL:-https://github.com/atlantiqs-org/vexlyx.git}"
   VEXLYX_REPO_REF="${VEXLYX_REPO_REF:-main}"
 
   export VEXLYX_DOMAIN VEXLYX_BASE_DOMAIN VEXLYX_ADMIN_EMAIL VEXLYX_ADMIN_NAME VEXLYX_ADMIN_PASSWORD

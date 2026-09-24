@@ -1554,10 +1554,10 @@ No automated test suite exists in this repo yet (no Vitest anywhere in either ap
 **Status:** 🟢 COMPLETED
 
 **Description:**
-Automated, idempotent installation script that sets up Vexlyx on a fresh Ubuntu 24.04 server via `curl -fsSL https://get.vexlyx.com | bash`. `install.sh` is a thin bootstrap that clones/updates the repo into `/opt/vexlyx` and hands off to `system/scripts/install/run.sh`, which runs 16 numbered, independently-idempotent steps covering package/Docker/Node/Python installation, config collection, secret generation, building the panel, and bringing up every service (Postgres/MySQL/Redis, Traefik with real Let's Encrypt certs, CoreDNS, Postfix/Dovecot/Roundcube, and the dashboard/API themselves) behind a hardened `docker-compose.prod.yml` overlay, finishing with UFW configuration. DNS is served via CoreDNS (not BIND9 — see F3.3, which already made that call) as Docker containers rather than bare-metal services, since the existing mail-management code (`postfix_manager.py`/`dovecot_manager.py`) is hardwired to `docker exec` against containers.
+Automated, idempotent installation script that sets up Vexlyx on a fresh Ubuntu 24.04 server via `curl -fsSL https://vexlyx.atlantiqs.org/install.sh | bash`. `install.sh` is a thin bootstrap that clones/updates the repo into `/opt/vexlyx` and hands off to `system/scripts/install/run.sh`, which runs 16 numbered, independently-idempotent steps covering package/Docker/Node/Python installation, config collection, secret generation, building the panel, and bringing up every service (Postgres/MySQL/Redis, Traefik with real Let's Encrypt certs, CoreDNS, Postfix/Dovecot/Roundcube, and the dashboard/API themselves) behind a hardened `docker-compose.prod.yml` overlay, finishing with UFW configuration. DNS is served via CoreDNS (not BIND9 — see F3.3, which already made that call) as Docker containers rather than bare-metal services, since the existing mail-management code (`postfix_manager.py`/`dovecot_manager.py`) is hardwired to `docker exec` against containers.
 
 **Acceptance Criteria:**
-- [x] `curl -fsSL https://get.vexlyx.com | bash` installs everything
+- [x] `curl -fsSL https://vexlyx.atlantiqs.org/install.sh | bash` installs everything
 - [x] Installs Docker, Docker Compose, Node.js, Python
 - [x] Configures PostgreSQL, Redis, Traefik
 - [x] Sets up Postfix, Dovecot, CoreDNS (supersedes BIND9 per F3.3's implementation choice)

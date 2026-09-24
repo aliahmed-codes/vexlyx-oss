@@ -73,7 +73,7 @@ git init
 git add .
 git commit -m "chore: initialize vexlyx repository"
 git branch -M main
-git remote add origin https://github.com/aliahmed-codes/vexlyx.git
+git remote add origin https://github.com/atlantiqs-org/vexlyx.git
 git push -u origin main
 ```
 

@@ -9,7 +9,7 @@ Deploy modern apps (Next.js, Node.js, Python, React, static, WordPress) and mana
 On a fresh Ubuntu 24.04 server:
 
 ```bash
-VEXLYX_DOMAIN=panel.yourdomain.com curl -fsSL https://get.vexlyx.com | bash
+VEXLYX_DOMAIN=panel.yourdomain.com curl -fsSL https://vexlyx.atlantiqs.org/install.sh | bash
 ```
 
 Installs Docker, Node.js, Python, and Nixpacks; brings up Postgres, Redis, Traefik (with a real Let's Encrypt certificate), CoreDNS, Postfix/Dovecot, and the panel itself; creates the admin user; and configures UFW. Safe to re-run at any time. See [docs/dev/installer.md](./docs/dev/installer.md) for how it works.
@@ -27,7 +27,7 @@ Installs Docker, Node.js, Python, and Nixpacks; brings up Postgres, Redis, Traef
 
 ```bash
 # Clone the repo
-git clone https://github.com/aliahmed-codes/vexlyx.git
+git clone https://github.com/atlantiqs-org/vexlyx.git
 cd vexlyx
 
 # Install dependencies
