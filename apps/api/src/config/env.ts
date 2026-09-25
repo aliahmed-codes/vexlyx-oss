@@ -29,6 +29,10 @@ const envSchema = z.object({
     .enum(["true", "false"])
     .default("false")
     .transform((v) => v === "true"),
+  REQUIRE_ADMIN_2FA: z
+    .enum(["true", "false"])
+    .default("false")
+    .transform((v) => v === "true"),
   // Git integration (F1.3)
   PROJECTS_DIR: z.string().min(1).default("./workspaces/projects"),
   SSH_KEYS_DIR: z.string().min(1).default("./workspaces/keys"),
