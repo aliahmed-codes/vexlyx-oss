@@ -152,9 +152,10 @@ export async function authRoutes(app: FastifyInstance) {
   app.post("/2fa/challenge", { config: { rateLimit: { max: 5, timeWindow: "15 minutes" } } }, async (request, reply) => {
     try {
       const data = TwoFactorChallengeSchema.parse(request.body);
-      const userId = await twoFactor.consumeChallenge(data.challengeToken);
+      const userId = await twoFactor.peekChallenge(data.challengeToken);
       if (!userId) return reply.status(401).send({ error: "Invalid or expired code", code: "2FA_INVALID_CODE", details: {} });
       if (!(await twoFactor.verifyLoginCode(userId, data.code))) return reply.status(401).send({ error: "Invalid or expired code", code: "2FA_INVALID_CODE", details: {} });
+      await twoFactor.deleteChallenge(data.challengeToken);
       const user = await service.getCurrentUser(userId);
       await createSession(app, reply, userId);
       return { user };
