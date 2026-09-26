@@ -85,3 +85,29 @@ code by construction).
 
 **Verification:** `pnpm --filter @vexlyx/api test -- src/modules/auth/` →
 9 files, 60 tests, all pass (59 pre-existing + 1 new).
+
+---
+
+## Fix Round 2/5 — real argon2 in tests + used-row survival assertion (2026-09-26)
+
+**Findings addressed:**
+1. File-scoped `vi.mock("argon2")` hollowed the no-plaintext property test
+   (fake hash embedded plaintext; assertions passed trivially). Removed the
+   mock entirely — all tests now use real argon2. No `spyOn` fake retained
+   anywhere; not needed.
+2. Strengthened the property assertion: per-index `codeHash !== plaintext`
+   retained, plus `argon2.verify(storedHash, plaintext)` resolves `true` for
+   a stored row (proves hashing real and no plaintext persisted).
+3. Reconfirm test now asserts observed state directly: after consume +
+   reconfirm, exactly one row in the mock store has `usedAt !== null`, and
+   its hash verifies against the consumed first-batch code — alongside the
+   existing behavioral checks (latest batch verifies `true`, stale unused
+   code verifies `false`).
+
+**Timeouts:** per-test `{ timeout: ... }` only — 30s on the single-confirm
+test (10 hashes + 1 verify), 60s on the reconfirm test (20 hashes + ~12
+verifies across login-code loops). No global skips.
+
+**Verification:** `pnpm --filter @vexlyx/api test --
+src/modules/auth/two-factor-service.test.ts` → 9 files, 60 tests, all pass,
+Duration 16.43s.
