@@ -99,7 +99,7 @@ describe("TwoFactorService.confirmSetup", () => {
     findUnique.mockResolvedValue({
       id: "u1", email: "u1@example.com", password: "hashed", totpSecretEncrypted: encrypt(secret1), totpEnabled: true,
     });
-    expect(await service.verifyLoginCode("u1", first.recoveryCodes[0])).toBe(true);
+    expect(await service.verifyLoginCode("u1", first.recoveryCodes[0] as string)).toBe(true);
 
     const secret2 = authenticator.generateSecret();
     findUnique.mockResolvedValue({
@@ -120,9 +120,9 @@ describe("TwoFactorService.confirmSetup", () => {
       id: "u1", email: "u1@example.com", password: "hashed", totpSecretEncrypted: encrypt(secret2), totpEnabled: true,
     });
     // Latest batch verifies…
-    expect(await service.verifyLoginCode("u1", second.recoveryCodes[0])).toBe(true);
+    expect(await service.verifyLoginCode("u1", second.recoveryCodes[0] as string)).toBe(true);
     // …stale unused codes from the first batch do not (only the used one is gone via consumption).
-    expect(await service.verifyLoginCode("u1", first.recoveryCodes[1])).toBe(false);
+    expect(await service.verifyLoginCode("u1", first.recoveryCodes[1] as string)).toBe(false);
   });
 });
 

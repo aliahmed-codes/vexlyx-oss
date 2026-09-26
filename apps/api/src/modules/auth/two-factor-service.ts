@@ -79,6 +79,8 @@ export class TwoFactorService {
   }
 
   async adminReset(actorId: string, targetUserId: string) {
+    const target = await this.prisma.user.findUnique({ where: { id: targetUserId } });
+    if (!target) throw new AuthError("User not found", "USER_NOT_FOUND", 404);
     await this.prisma.user.update({ where: { id: targetUserId }, data: { totpSecretEncrypted: null, totpEnabled: false, totpVerifiedAt: null } });
     await this.prisma.recoveryCode.deleteMany({ where: { userId: targetUserId } });
     await this.auditLog.log(actorId, "user.2fa_reset", { type: "User", id: targetUserId }, {});
