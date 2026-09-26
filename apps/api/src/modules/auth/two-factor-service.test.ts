@@ -9,6 +9,7 @@ process.env.DATABASE_URL ??= "postgresql://user:pass@localhost:5432/vexlyx_test"
 process.env.SESSION_SECRET ??= "test-session-secret-at-least-32-characters-long";
 
 const { TwoFactorService } = await import("./two-factor-service.js");
+const { AuthError } = await import("./service.js");
 const { encrypt } = await import("../../utils/encryption.js");
 
 function makeService() {
@@ -146,6 +147,30 @@ describe("TwoFactorService.verifyLoginCode", () => {
     (prisma.recoveryCode.findMany as ReturnType<typeof vi.fn>).mockResolvedValue([]);
     const ok = await service.verifyLoginCode("u1", "000000");
     expect(ok).toBe(false);
+  });
+});
+
+describe("TwoFactorService.createSetup guard", () => {
+  it("rejects setup when 2fa already enabled without clobbering", async () => {
+    const { service, prisma } = makeService();
+    (prisma.user.findUnique as ReturnType<typeof vi.fn>).mockResolvedValue({
+      id: "u1", email: "u1@example.com", totpEnabled: true, totpSecretEncrypted: "enc",
+    });
+    const err = await service.createSetup("u1").catch((e: unknown) => e);
+    expect(err).toBeInstanceOf(AuthError);
+    expect(err).toMatchObject({ code: "2FA_ALREADY_ENABLED", statusCode: 409 });
+    expect(prisma.user.update).not.toHaveBeenCalled();
+  });
+});
+
+describe("TwoFactorService challenge peek", () => {
+  it("peek does not consume; deleteChallenge removes", async () => {
+    const { service } = makeService();
+    const token = await service.storeChallenge("u1");
+    expect(await service.peekChallenge(token)).toBe("u1");
+    expect(await service.peekChallenge(token)).toBe("u1");
+    await service.deleteChallenge(token);
+    expect(await service.peekChallenge(token)).toBeNull();
   });
 });
 

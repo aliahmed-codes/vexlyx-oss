@@ -11,6 +11,9 @@ const CHALLENGE_PREFIX = "2fa-challenge:";
 const CHALLENGE_TTL_SECONDS = 300;
 const ISSUER = "Vexlyx";
 
+// ±1 step (±30s) tolerance for authenticator clock skew (spec §3).
+authenticator.options = { window: 1 };
+
 function newRecoveryCodes(): string[] {
   return Array.from({ length: 10 }, () =>
     crypto.randomBytes(5).toString("hex"),
@@ -27,6 +30,7 @@ export class TwoFactorService {
   async createSetup(userId: string) {
     const user = await this.prisma.user.findUnique({ where: { id: userId } });
     if (!user) throw new AuthError("User not found", "USER_NOT_FOUND", 404);
+    if (user.totpEnabled) throw new AuthError("Two-factor already enabled — disable first", "2FA_ALREADY_ENABLED", 409);
     const secret = authenticator.generateSecret();
     await this.prisma.user.update({
       where: { id: userId },
@@ -93,13 +97,24 @@ export class TwoFactorService {
   }
 
   async consumeChallenge(token: string): Promise<string | null> {
+    const userId = await this.peekChallenge(token);
+    if (userId) await this.redis.del(CHALLENGE_PREFIX + token);
+    return userId;
+  }
+
+  // Read without deleting — lets a typo'd code be retried on the same token
+  // (spec §7: delete on success/expiry only). Rate limit bounds guessing.
+  async peekChallenge(token: string): Promise<string | null> {
     const raw = await this.redis.get(CHALLENGE_PREFIX + token);
     if (!raw) return null;
-    await this.redis.del(CHALLENGE_PREFIX + token);
     try {
       return (JSON.parse(raw) as { userId: string }).userId;
     } catch {
       return null;
     }
+  }
+
+  async deleteChallenge(token: string): Promise<void> {
+    await this.redis.del(CHALLENGE_PREFIX + token);
   }
 }

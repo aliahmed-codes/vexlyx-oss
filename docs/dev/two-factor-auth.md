@@ -29,7 +29,8 @@ Core logic lives in `apps/api/src/modules/auth/two-factor-service.ts`
 (`TwoFactorService`); routes stay thin per CLAUDE.md §6. Challenge and
 verify-setup endpoints are rate-limited at the login tier (5 per 15 min
 per IP). Secrets, TOTP codes, and recovery codes are never logged;
-`PUBLIC_USER_SELECT` is unchanged so `/me` leaks no secret material.
+`PUBLIC_USER_SELECT` exposes only `totpEnabled` (added in commit c091380);
+no secret material (`totpSecretEncrypted`, recovery hashes) reaches `/me`.
 
 ## Env: `REQUIRE_ADMIN_2FA`
 
