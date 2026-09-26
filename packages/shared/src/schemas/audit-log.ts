@@ -27,6 +27,9 @@ export const AUDIT_ACTIONS = [
   "database.deleted",
   "mailbox.created",
   "mailbox.deleted",
+  "user.2fa_enabled",
+  "user.2fa_disabled",
+  "user.2fa_reset",
 ] as const;
 export type AuditAction = (typeof AUDIT_ACTIONS)[number];
 
