@@ -1,6 +1,13 @@
 import { describe, it, expect, vi } from "vitest";
 import { authenticator } from "otplib";
 
+// Fast deterministic stand-in: real argon2 hashing (~20 hashes + verify
+// loops over rows) blows the 5s per-test timeout on this reconfirm test.
+vi.mock("argon2", () => ({
+  hash: vi.fn(async (code: string) => `argon2$${code}`),
+  verify: vi.fn(async (hash: string, code: string) => hash === `argon2$${code}`),
+}));
+
 // config/env.ts validates process.env eagerly at import time, so these must
 // be set before two-factor-service.ts (which imports encryption.ts → env.ts)
 // is loaded — static imports would be hoisted ahead of any assignment here.
@@ -47,10 +54,74 @@ describe("TwoFactorService.confirmSetup", () => {
     expect(prisma.recoveryCode.createMany).toHaveBeenCalledOnce();
     const rows = (prisma.recoveryCode.createMany as ReturnType<typeof vi.fn>).mock.calls[0]?.[0].data as { userId: string; codeHash: string }[];
     expect(rows).toHaveLength(10);
-    for (const row of rows) {
-      expect(row.userId).toBe("u1");
-      expect(row.codeHash).not.toContain(result.recoveryCodes[0]);
+    for (let i = 0; i < rows.length; i++) {
+      expect(rows[i]?.userId).toBe("u1");
+      expect(rows[i]?.codeHash).not.toBe(result.recoveryCodes[i]);
     }
+  });
+
+  it("clears stale unused recovery codes on reconfirm, keeping used rows", async () => {
+    const { service, prisma } = makeService();
+    type Row = { id: string; userId: string; codeHash: string; usedAt: Date | null };
+    let rows: Row[] = [];
+    let nextId = 0;
+    (prisma.recoveryCode.createMany as ReturnType<typeof vi.fn>).mockImplementation(
+      async ({ data }: { data: { userId: string; codeHash: string }[] }) => {
+        for (const d of data) rows.push({ id: `rc${nextId++}`, userId: d.userId, codeHash: d.codeHash, usedAt: null });
+        return { count: data.length };
+      },
+    );
+    (prisma.recoveryCode.deleteMany as ReturnType<typeof vi.fn>).mockImplementation(
+      async ({ where }: { where: { userId: string; usedAt?: null } }) => {
+        const before = rows.length;
+        rows = rows.filter((r) => !(r.userId === where.userId && (where.usedAt === undefined || r.usedAt === null)));
+        return { count: before - rows.length };
+      },
+    );
+    (prisma.recoveryCode.findMany as ReturnType<typeof vi.fn>).mockImplementation(
+      async ({ where }: { where: { userId: string; usedAt?: null } }) => {
+        return rows.filter((r) => r.userId === where.userId && (where.usedAt === undefined || r.usedAt === null));
+      },
+    );
+    (prisma.recoveryCode.update as ReturnType<typeof vi.fn>).mockImplementation(
+      async ({ where, data }: { where: { id: string }; data: { usedAt: Date } }) => {
+        const row = rows.find((r) => r.id === where.id);
+        if (row) row.usedAt = data.usedAt;
+        return row;
+      },
+    );
+
+    const findUnique = prisma.user.findUnique as ReturnType<typeof vi.fn>;
+    const secret1 = authenticator.generateSecret();
+    findUnique.mockResolvedValue({
+      id: "u1", email: "u1@example.com", password: "hashed", totpSecretEncrypted: encrypt(secret1), totpEnabled: false,
+    });
+    const first = await service.confirmSetup("u1", authenticator.generate(secret1));
+    expect(first.recoveryCodes).toHaveLength(10);
+
+    // Mark one first-batch code as used (audit history) — must survive reconfirm.
+    findUnique.mockResolvedValue({
+      id: "u1", email: "u1@example.com", password: "hashed", totpSecretEncrypted: encrypt(secret1), totpEnabled: true,
+    });
+    expect(await service.verifyLoginCode("u1", first.recoveryCodes[0])).toBe(true);
+
+    const secret2 = authenticator.generateSecret();
+    findUnique.mockResolvedValue({
+      id: "u1", email: "u1@example.com", password: "hashed", totpSecretEncrypted: encrypt(secret2), totpEnabled: false,
+    });
+    const second = await service.confirmSetup("u1", authenticator.generate(secret2));
+    expect(second.recoveryCodes).toHaveLength(10);
+
+    expect(prisma.recoveryCode.deleteMany).toHaveBeenCalledWith({ where: { userId: "u1", usedAt: null } });
+
+    // Enabled user for verifyLoginCode (recovery-code path: hex codes skip the TOTP branch).
+    findUnique.mockResolvedValue({
+      id: "u1", email: "u1@example.com", password: "hashed", totpSecretEncrypted: encrypt(secret2), totpEnabled: true,
+    });
+    // Latest batch verifies…
+    expect(await service.verifyLoginCode("u1", second.recoveryCodes[0])).toBe(true);
+    // …stale unused codes from the first batch do not (only the used one is gone via consumption).
+    expect(await service.verifyLoginCode("u1", first.recoveryCodes[1])).toBe(false);
   });
 });
 

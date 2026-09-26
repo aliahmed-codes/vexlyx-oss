@@ -45,6 +45,7 @@ export class TwoFactorService {
     if (!authenticator.check(code, secret)) throw new AuthError("Invalid code", "2FA_INVALID_CODE", 401);
     const codes = newRecoveryCodes();
     const hashes = await Promise.all(codes.map((c) => argon2.hash(c)));
+    await this.prisma.recoveryCode.deleteMany({ where: { userId, usedAt: null } });
     await this.prisma.recoveryCode.createMany({
       data: codes.map((_c, i) => ({ userId, codeHash: hashes[i] as string })),
     });
