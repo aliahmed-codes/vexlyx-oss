@@ -61,6 +61,9 @@ export function TwoFactorCard() {
     setVerifyCode("");
     setPassword("");
     setCodeOrRecovery("");
+    setQrDataUrl("");
+    setManualKey("");
+    setCopiedKey(false);
   };
 
   const handleStartSetup = async () => {

@@ -66,8 +66,7 @@ export class AuthService {
       throw new AuthError("Invalid email or password", "INVALID_CREDENTIALS", 401);
     }
 
-    const { password: _password, ...publicUser } = user;
-    return publicUser;
+    return this.getCurrentUser(user.id);
   }
 
   // F5.11 — self-service password change. The current session stays valid;
