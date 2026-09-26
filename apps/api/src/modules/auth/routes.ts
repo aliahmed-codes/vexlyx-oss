@@ -1,13 +1,16 @@
 import type { FastifyInstance } from "fastify";
 import rateLimit from "@fastify/rate-limit";
-import { RegisterSchema, LoginSchema, ChangePasswordSchema } from "./schema.js";
+import { RegisterSchema, LoginSchema, ChangePasswordSchema, TwoFactorChallengeSchema, VerifyTotpSetupSchema, DisableTwoFactorSchema } from "./schema.js";
 import { AuthService, AuthError } from "./service.js";
+import { TwoFactorService } from "./two-factor-service.js";
+import { AuditLogService } from "../audit-log/service.js";
 import { createSession, destroySession } from "../../plugins/auth.js";
 import { env } from "../../config/env.js";
 
 
 export async function authRoutes(app: FastifyInstance) {
   const service = new AuthService(app.prisma);
+  const twoFactor = new TwoFactorService(app.prisma, app.redis, new AuditLogService(app.prisma, app.log));
 
   // Register rate limiting plugin for this scope
   await app.register(rateLimit, {
@@ -68,6 +71,16 @@ export async function authRoutes(app: FastifyInstance) {
         const data = LoginSchema.parse(request.body);
         const user = await service.login(data);
 
+        const full = await app.prisma.user.findUnique({ where: { id: user.id } });
+        if (full?.totpEnabled) {
+          const challengeToken = await twoFactor.storeChallenge(user.id);
+          reply.status(202).send({ requires2FA: true, challengeToken });
+          return;
+        }
+        if (env.REQUIRE_ADMIN_2FA && user.role === "ADMIN" && !full?.totpEnabled) {
+          reply.status(403).send({ error: "Admins must enable two-factor authentication", code: "ADMIN_2FA_REQUIRED", details: {} });
+          return;
+        }
         await createSession(app, reply, user.id);
 
         return { user };
@@ -133,6 +146,63 @@ export async function authRoutes(app: FastifyInstance) {
   // GET /api/auth/config — public, lets the dashboard know whether to show
   // the self-registration form/link (F5.8).
   app.get("/config", async () => {
-    return { allowRegistration: env.ALLOW_REGISTRATION };
+    return { allowRegistration: env.ALLOW_REGISTRATION, requireAdmin2FA: env.REQUIRE_ADMIN_2FA };
+  });
+
+  app.post("/2fa/challenge", { config: { rateLimit: { max: 5, timeWindow: "15 minutes" } } }, async (request, reply) => {
+    try {
+      const data = TwoFactorChallengeSchema.parse(request.body);
+      const userId = await twoFactor.consumeChallenge(data.challengeToken);
+      if (!userId) return reply.status(401).send({ error: "Invalid or expired code", code: "2FA_INVALID_CODE", details: {} });
+      if (!(await twoFactor.verifyLoginCode(userId, data.code))) return reply.status(401).send({ error: "Invalid or expired code", code: "2FA_INVALID_CODE", details: {} });
+      const user = await service.getCurrentUser(userId);
+      await createSession(app, reply, userId);
+      return { user };
+    } catch (err) {
+      if (err instanceof AuthError) {
+        reply.status(err.statusCode).send({ error: err.message, code: err.code, details: {} });
+        return;
+      }
+      throw err;
+    }
+  });
+
+  app.post("/2fa/setup", { preHandler: [app.requireAuth] }, async (request, reply) => {
+    try {
+      return twoFactor.createSetup(request.userId!);
+    } catch (err) {
+      if (err instanceof AuthError) {
+        reply.status(err.statusCode).send({ error: err.message, code: err.code, details: {} });
+        return;
+      }
+      throw err;
+    }
+  });
+
+  app.post("/2fa/verify-setup", { preHandler: [app.requireAuth], config: { rateLimit: { max: 5, timeWindow: "15 minutes" } } }, async (request, reply) => {
+    try {
+      const data = VerifyTotpSetupSchema.parse(request.body);
+      return twoFactor.confirmSetup(request.userId!, data.code);
+    } catch (err) {
+      if (err instanceof AuthError) {
+        reply.status(err.statusCode).send({ error: err.message, code: err.code, details: {} });
+        return;
+      }
+      throw err;
+    }
+  });
+
+  app.post("/2fa/disable", { preHandler: [app.requireAuth] }, async (request, reply) => {
+    try {
+      const data = DisableTwoFactorSchema.parse(request.body);
+      await twoFactor.disable(request.userId!, data.password, data.codeOrRecovery);
+      return { message: "Two-factor authentication disabled" };
+    } catch (err) {
+      if (err instanceof AuthError) {
+        reply.status(err.statusCode).send({ error: err.message, code: err.code, details: {} });
+        return;
+      }
+      throw err;
+    }
   });
 }
