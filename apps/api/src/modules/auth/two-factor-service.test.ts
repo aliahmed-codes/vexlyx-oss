@@ -1,12 +1,6 @@
 import { describe, it, expect, vi } from "vitest";
 import { authenticator } from "otplib";
-
-// Fast deterministic stand-in: real argon2 hashing (~20 hashes + verify
-// loops over rows) blows the 5s per-test timeout on this reconfirm test.
-vi.mock("argon2", () => ({
-  hash: vi.fn(async (code: string) => `argon2$${code}`),
-  verify: vi.fn(async (hash: string, code: string) => hash === `argon2$${code}`),
-}));
+import * as argon2 from "argon2";
 
 // config/env.ts validates process.env eagerly at import time, so these must
 // be set before two-factor-service.ts (which imports encryption.ts → env.ts)
@@ -39,7 +33,7 @@ function makeService() {
 }
 
 describe("TwoFactorService.confirmSetup", () => {
-  it("enables 2fa on valid totp code and returns 10 recovery codes", async () => {
+  it("enables 2fa on valid totp code and returns 10 recovery codes", { timeout: 30000 }, async () => {
     const { service, prisma } = makeService();
     const secret = authenticator.generateSecret();
     (prisma.user.findUnique as ReturnType<typeof vi.fn>).mockResolvedValue({
@@ -58,9 +52,11 @@ describe("TwoFactorService.confirmSetup", () => {
       expect(rows[i]?.userId).toBe("u1");
       expect(rows[i]?.codeHash).not.toBe(result.recoveryCodes[i]);
     }
+    // Real-hash proof: at least one stored hash verifies against its plaintext.
+    await expect(argon2.verify(rows[0]?.codeHash as string, result.recoveryCodes[0] as string)).resolves.toBe(true);
   });
 
-  it("clears stale unused recovery codes on reconfirm, keeping used rows", async () => {
+  it("clears stale unused recovery codes on reconfirm, keeping used rows", { timeout: 60000 }, async () => {
     const { service, prisma } = makeService();
     type Row = { id: string; userId: string; codeHash: string; usedAt: Date | null };
     let rows: Row[] = [];
@@ -113,6 +109,11 @@ describe("TwoFactorService.confirmSetup", () => {
     expect(second.recoveryCodes).toHaveLength(10);
 
     expect(prisma.recoveryCode.deleteMany).toHaveBeenCalledWith({ where: { userId: "u1", usedAt: null } });
+
+    // The consumed first-batch row survives reconfirm in observed state.
+    const usedRows = rows.filter((r) => r.usedAt !== null);
+    expect(usedRows).toHaveLength(1);
+    await expect(argon2.verify(usedRows[0]?.codeHash as string, first.recoveryCodes[0] as string)).resolves.toBe(true);
 
     // Enabled user for verifyLoginCode (recovery-code path: hex codes skip the TOTP branch).
     findUnique.mockResolvedValue({
