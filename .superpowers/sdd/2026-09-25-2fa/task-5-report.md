@@ -60,3 +60,38 @@ pre-existing in Task 4's `two-factor-service.test.ts` (lines 102/123/125,
 4. Contracts for Tasks 6–7 are live: `202 { requires2FA, challengeToken }`,
    `403 ADMIN_2FA_REQUIRED`, challenge/setup/verify-setup/disable/reset shapes
    and `requireAdmin2FA` in `/config` exactly per plan §Task 5 interfaces.
+
+## Fix round 1/3 (HEAD 455ae83)
+
+1. **Reset route error mapping (important)** — `POST /api/users/:id/2fa/reset`
+   had no try/catch, so any throw (incl. unknown target id) became a 500.
+   Handler now catches `AuthError` → `{ error, code, details }` (same shape as
+   `auth/routes.ts` neighbors) and delegates the rest to the file's existing
+   `handleUserError`. Root-cause half: `TwoFactorService.adminReset` did a
+   blind `prisma.user.update` (P2025 → 500 on unknown id); it now checks
+   `findUnique` first and throws `AuthError("User not found",
+   "USER_NOT_FOUND", 404)`, same as `createSetup`/`disable`. One caller only
+   (`users/routes.ts`), so no other paths affected.
+2. **Minor** — removed unused `beforeEach` import from
+   `two-factor-routes.test.ts`.
+3. **Typecheck** — 3 errors in `two-factor-service.test.ts` (lines
+   102/123/125, `recoveryCodes[i]: string | undefined` passed to
+   `verifyLoginCode(userId, code: string)`) fixed with `as string` casts,
+   matching the file's existing style (line 56/116). Assertions untouched;
+   real argon2 hashing/verification retained.
+
+**Re-run:** `vitest run src/modules/auth/two-factor-service.test.ts
+src/modules/auth/two-factor-routes.test.ts` → **2 files, 6 tests, all pass**
+(real-argon2 reconfirm test included). Full `test -- src/modules/auth/`
+(note: filter does not narrow — whole API suite runs): 60/61 pass; the one
+failure was `src/plugins/auth.test.ts > returns 401 when there is no
+session` timing out at 5s under 10 parallel workers — rerun solo passes
+5/5 in 2.85s, so a load flake, not a regression (file untouched).
+
+**Typecheck:** `pnpm --filter @vexlyx/api typecheck` → **exit 0, zero
+errors repo-wide.** The 3 target errors are gone and there are no remaining
+pre-existing errors to report separately.
+
+**Commit:** `fix(2fa): map reset errors and clean test types` (files:
+users `routes.ts`, auth `two-factor-service.ts`,
+`two-factor-service.test.ts`, `two-factor-routes.test.ts`, this report).
