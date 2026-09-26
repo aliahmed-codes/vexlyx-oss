@@ -182,10 +182,14 @@ model User {
   /// aggregate usage across the reseller + all sub-accounts (checked at
   /// resource-creation time). ADMIN-only to toggle.
   oversellingEnabled Boolean @default(false) @map("overselling_enabled")
+  totpSecretEncrypted String? @map("totp_secret_encrypted")
+  totpEnabled         Boolean  @default(false) @map("totp_enabled")
+  totpVerifiedAt      DateTime? @map("totp_verified_at")
   createdAt DateTime @default(now()) @map("created_at")
   updatedAt DateTime @updatedAt @map("updated_at")
 
   sessions       Session[]
+  recoveryCodes RecoveryCode[]
   projects       Project[]
   domains        Domain[]
   databases      Database[]
@@ -212,6 +216,19 @@ model Session {
 
   @@index([userId])
   @@map("sessions")
+}
+
+model RecoveryCode {
+  id        String    @id @default(cuid())
+  userId    String    @map("user_id")
+  codeHash  String    @map("code_hash")
+  usedAt    DateTime? @map("used_at")
+  createdAt DateTime  @default(now()) @map("created_at")
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@map("recovery_codes")
 }
 
 /// A hosted application or website managed by the panel.
