@@ -4,8 +4,8 @@ export const VEXLYX_VERSION = "0.0.1";
 /** Application name constant used across both frontend and backend */
 export const APP_NAME = "Vexlyx";
 
-export { RegisterSchema, LoginSchema, ChangePasswordSchema } from "./schemas/auth.js";
-export type { RegisterInput, LoginInput, ChangePasswordInput } from "./schemas/auth.js";
+export { RegisterSchema, LoginSchema, ChangePasswordSchema, TwoFactorChallengeSchema, VerifyTotpSetupSchema, DisableTwoFactorSchema } from "./schemas/auth.js";
+export type { RegisterInput, LoginInput, ChangePasswordInput, TwoFactorChallengeInput, VerifyTotpSetupInput, DisableTwoFactorInput } from "./schemas/auth.js";
 
 export {
   ProjectTypeSchema,

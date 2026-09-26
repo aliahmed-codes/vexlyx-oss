@@ -39,3 +39,23 @@ export const ChangePasswordSchema = z
   });
 
 export type ChangePasswordInput = z.infer<typeof ChangePasswordSchema>;
+
+export const TwoFactorChallengeSchema = z.object({
+  challengeToken: z.string().min(32),
+  code: z.string().regex(/^[0-9a-zA-Z-]{6,12}$/, "Invalid code"),
+});
+
+export type TwoFactorChallengeInput = z.infer<typeof TwoFactorChallengeSchema>;
+
+export const VerifyTotpSetupSchema = z.object({
+  code: z.string().regex(/^\d{6}$/, "Code must be 6 digits"),
+});
+
+export type VerifyTotpSetupInput = z.infer<typeof VerifyTotpSetupSchema>;
+
+export const DisableTwoFactorSchema = z.object({
+  password: z.string().min(1, "Password is required"),
+  codeOrRecovery: z.string().min(6),
+});
+
+export type DisableTwoFactorInput = z.infer<typeof DisableTwoFactorSchema>;
