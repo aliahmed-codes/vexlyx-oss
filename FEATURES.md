@@ -2041,16 +2041,16 @@ Comparable tools all solve this: **Coolify** runs configurable automated cleanup
 ---
 
 ### F5.17 — Two-Factor Authentication (2FA/TOTP)
-**Status:** 🔴 NOT STARTED
+**Status:** 🟢 COMPLETED
 
 **Description:**
 Competitor audit (F5.5 follow-up): Plesk, cPanel/WHM, and CapRover all support 2FA on login, tied to their access-control system — Vexlyx currently has none, at any role. Given Vexlyx's ADMIN role has unrestricted access (including firewall and backups), this is a meaningfully higher-value security feature than for a typical SaaS app.
 
 **Acceptance Criteria:**
-- [ ] TOTP-based 2FA (compatible with standard authenticator apps), optional per-user, enforceable-by-policy for ADMIN (e.g. an env flag requiring it for the ADMIN role specifically)
-- [ ] Setup flow: QR code + manual secret entry, backup/recovery codes shown once
-- [ ] Login flow: password, then TOTP challenge if enabled, before session creation
-- [ ] Works alongside the existing Argon2id + Redis session auth (`apps/api/src/plugins/auth.ts`) without replacing it
+- [x] TOTP-based 2FA (compatible with standard authenticator apps), optional per-user, enforceable-by-policy for ADMIN (e.g. an env flag requiring it for the ADMIN role specifically)
+- [x] Setup flow: QR code + manual secret entry, backup/recovery codes shown once
+- [x] Login flow: password, then TOTP challenge if enabled, before session creation
+- [x] Works alongside the existing Argon2id + Redis session auth (`apps/api/src/plugins/auth.ts`) without replacing it
 
 **Test Plan:**
 1. Enable 2FA on an account → login requires password + valid TOTP code
