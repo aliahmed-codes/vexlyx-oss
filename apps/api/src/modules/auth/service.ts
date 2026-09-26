@@ -14,6 +14,7 @@ const PUBLIC_USER_SELECT = {
   maxMailboxes: true,
   maxSubAccounts: true,
   permissions: true,
+  totpEnabled: true,
   createdAt: true,
 } as const;
 

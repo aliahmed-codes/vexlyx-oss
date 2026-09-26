@@ -31,6 +31,7 @@ import { ApiRequestError } from "@/lib/api";
 import { cn } from "@/lib/utils";
 import { formatTime } from "@/lib/datetime";
 import { useRefreshAnimation, refreshIconClassName } from "@/hooks/useRefreshAnimation";
+import { TwoFactorCard } from "./TwoFactorCard";
 import type { DnsRecordVerification } from "@vexlyx/shared";
 
 // IANA timezone identifiers, sourced from the runtime's own tz database
@@ -229,6 +230,9 @@ export function SettingsPage() {
           </form>
         </CardContent>
       </Card>
+
+      {/* Two-Factor Authentication (F5.17) */}
+      <TwoFactorCard />
 
       {/* Server Timezone (F5.13) — governs the backup cron's wall-clock time
           and (where adopted) how timestamps are displayed across the dashboard. */}
