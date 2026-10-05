@@ -1,0 +1,16 @@
+{
+  "name": "@vexlyx/docs",
+  "version": "0.0.1",
+  "private": true,
+  "type": "module",
+  "description": "Vexlyx documentation site (VitePress)",
+  "scripts": {
+    "dev": "vitepress dev",
+    "build": "vitepress build",
+    "preview": "vitepress preview",
+    "typecheck": "echo 'No typecheck for docs'"
+  },
+  "devDependencies": {
+    "vitepress": "^1.5.0"
+  }
+}

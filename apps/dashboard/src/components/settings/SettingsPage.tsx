@@ -13,7 +13,10 @@ import {
   Loader2,
   RefreshCw,
   Server,
+  ShieldCheck,
+  ShieldOff,
   ShieldQuestion,
+  Smartphone,
   User as UserIcon,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
@@ -50,7 +53,7 @@ function listTimezones(): string[] {
  * the server's public IP and required DNS records.
  */
 export function SettingsPage() {
-  const { user, changePassword } = useAuth();
+  const { user, changePassword, totpSetup, totpEnable, totpDisable } = useAuth();
   const isAdmin = user?.role === "ADMIN";
   const {
     info,
@@ -75,6 +78,14 @@ export function SettingsPage() {
   const [confirmNewPassword, setConfirmNewPassword] = useState("");
   const [isChangingPassword, setIsChangingPassword] = useState(false);
   const [passwordError, setPasswordError] = useState<string | null>(null);
+
+  // 2FA state (F5.17)
+  const [totpStep, setTotpStep] = useState<"idle" | "setup" | "verify" | "disable">("idle");
+  const [totpSetupData, setTotpSetupData] = useState<{ secret: string; qrCodeDataUrl: string } | null>(null);
+  const [totpCode, setTotpCode] = useState("");
+  const [disablePassword, setDisablePassword] = useState("");
+  const [isTotpLoading, setIsTotpLoading] = useState(false);
+  const [totpError, setTotpError] = useState<string | null>(null);
 
   const { isRefreshing: isRefreshingDns, refresh: refreshDnsAnimation } = useRefreshAnimation();
   const [copiedIndex, setCopiedIndex] = useState<number | null>(null);
@@ -109,6 +120,67 @@ export function SettingsPage() {
   };
 
   const handleRefreshDns = () => refreshDnsAnimation(() => refreshDns());
+
+  // 2FA handlers (F5.17)
+  const handleTotpSetup = async () => {
+    setTotpError(null);
+    setIsTotpLoading(true);
+    try {
+      const data = await totpSetup();
+      setTotpSetupData(data);
+      setTotpCode("");
+      setTotpStep("setup");
+    } catch {
+      toast.error("Failed to start 2FA setup");
+    } finally {
+      setIsTotpLoading(false);
+    }
+  };
+
+  const handleTotpEnable = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setTotpError(null);
+    if (totpCode.length !== 6) {
+      setTotpError("Enter the 6-digit code from your authenticator app");
+      return;
+    }
+    setIsTotpLoading(true);
+    try {
+      await totpEnable(totpCode);
+      toast.success("Two-factor authentication enabled");
+      setTotpStep("idle");
+      setTotpSetupData(null);
+      setTotpCode("");
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : "Invalid code";
+      setTotpError(msg);
+      toast.error(msg);
+    } finally {
+      setIsTotpLoading(false);
+    }
+  };
+
+  const handleTotpDisable = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setTotpError(null);
+    if (!disablePassword) {
+      setTotpError("Password is required");
+      return;
+    }
+    setIsTotpLoading(true);
+    try {
+      await totpDisable(disablePassword);
+      toast.success("Two-factor authentication disabled");
+      setTotpStep("idle");
+      setDisablePassword("");
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : "Failed to disable 2FA";
+      setTotpError(msg);
+      toast.error(msg);
+    } finally {
+      setIsTotpLoading(false);
+    }
+  };
 
   const handleSaveTimezone = () => {
     if (timezone) updateTimezone(timezone);
@@ -227,6 +299,128 @@ export function SettingsPage() {
               {isChangingPassword ? "Changing…" : "Change password"}
             </Button>
           </form>
+        </CardContent>
+      </Card>
+
+      {/* Two-Factor Authentication (F5.17) */}
+      <Card>
+        <CardHeader>
+          <CardTitle className="flex items-center gap-2 text-base">
+            <Smartphone className="h-4 w-4" />
+            Two-Factor Authentication
+          </CardTitle>
+          <CardDescription>
+            {user?.twoFactorEnabled
+              ? "2FA is enabled. Your account requires an authenticator code at sign-in."
+              : "Add an extra layer of security by requiring an authenticator code at sign-in."}
+          </CardDescription>
+        </CardHeader>
+        <CardContent>
+          {totpStep === "idle" && (
+            <div className="flex items-center gap-3">
+              {user?.twoFactorEnabled ? (
+                <>
+                  <div className="flex items-center gap-2 text-sm text-emerald-600 dark:text-emerald-400">
+                    <ShieldCheck className="h-4 w-4" />
+                    Enabled
+                  </div>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={() => { setTotpStep("disable"); setTotpError(null); }}
+                  >
+                    <ShieldOff className="h-3.5 w-3.5" />
+                    Disable 2FA
+                  </Button>
+                </>
+              ) : (
+                <Button size="sm" onClick={() => void handleTotpSetup()} disabled={isTotpLoading}>
+                  {isTotpLoading ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <ShieldCheck className="h-3.5 w-3.5" />}
+                  Enable 2FA
+                </Button>
+              )}
+            </div>
+          )}
+
+          {totpStep === "setup" && totpSetupData && (
+            <div className="max-w-sm space-y-4">
+              <p className="text-sm text-muted-foreground">
+                Scan this QR code with your authenticator app (e.g. Google Authenticator, Authy, 1Password).
+              </p>
+              {/* eslint-disable-next-line @next/next/no-img-element */}
+              <img src={totpSetupData.qrCodeDataUrl} alt="2FA QR code" className="rounded-lg border border-border" width={200} height={200} />
+              <div className="rounded-lg bg-muted px-3 py-2">
+                <p className="text-xs text-muted-foreground">Or enter this code manually:</p>
+                <code className="mt-1 block break-all text-xs font-mono font-medium">{totpSetupData.secret}</code>
+              </div>
+              <form onSubmit={(e) => void handleTotpEnable(e)} className="space-y-3">
+                {totpError && (
+                  <div className="rounded-lg border border-destructive/50 bg-destructive/10 px-3 py-2 text-sm text-destructive">
+                    {totpError}
+                  </div>
+                )}
+                <div className="space-y-2">
+                  <Label htmlFor="totp-verify-code">Verification code</Label>
+                  <Input
+                    id="totp-verify-code"
+                    type="text"
+                    inputMode="numeric"
+                    pattern="[0-9]*"
+                    maxLength={6}
+                    placeholder="000000"
+                    autoComplete="one-time-code"
+                    value={totpCode}
+                    onChange={(e) => setTotpCode(e.target.value.replace(/\D/g, ""))}
+                    disabled={isTotpLoading}
+                    className="font-mono tracking-widest"
+                  />
+                </div>
+                <div className="flex gap-2">
+                  <Button type="submit" size="sm" disabled={isTotpLoading || totpCode.length !== 6}>
+                    {isTotpLoading ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : null}
+                    Verify &amp; Enable
+                  </Button>
+                  <Button type="button" variant="ghost" size="sm" onClick={() => { setTotpStep("idle"); setTotpCode(""); setTotpError(null); }}>
+                    Cancel
+                  </Button>
+                </div>
+              </form>
+            </div>
+          )}
+
+          {totpStep === "disable" && (
+            <form onSubmit={(e) => void handleTotpDisable(e)} className="max-w-sm space-y-4">
+              <p className="text-sm text-muted-foreground">
+                Confirm your current password to disable two-factor authentication.
+              </p>
+              {totpError && (
+                <div className="rounded-lg border border-destructive/50 bg-destructive/10 px-3 py-2 text-sm text-destructive">
+                  {totpError}
+                </div>
+              )}
+              <div className="space-y-2">
+                <Label htmlFor="disable-2fa-password">Current password</Label>
+                <Input
+                  id="disable-2fa-password"
+                  type="password"
+                  autoComplete="current-password"
+                  value={disablePassword}
+                  onChange={(e) => setDisablePassword(e.target.value)}
+                  disabled={isTotpLoading}
+                  required
+                />
+              </div>
+              <div className="flex gap-2">
+                <Button type="submit" variant="destructive" size="sm" disabled={isTotpLoading}>
+                  {isTotpLoading ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : null}
+                  Disable 2FA
+                </Button>
+                <Button type="button" variant="ghost" size="sm" onClick={() => { setTotpStep("idle"); setDisablePassword(""); setTotpError(null); }}>
+                  Cancel
+                </Button>
+              </div>
+            </form>
+          )}
         </CardContent>
       </Card>
 

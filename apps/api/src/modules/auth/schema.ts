@@ -1,2 +1,2 @@
-export { RegisterSchema, LoginSchema, ChangePasswordSchema } from "@vexlyx/shared";
-export type { RegisterInput, LoginInput, ChangePasswordInput } from "@vexlyx/shared";
+export { RegisterSchema, LoginSchema, ChangePasswordSchema, ForgotPasswordSchema, ResetPasswordSchema } from "@vexlyx/shared";
+export type { RegisterInput, LoginInput, ChangePasswordInput, ForgotPasswordInput, ResetPasswordInput } from "@vexlyx/shared";

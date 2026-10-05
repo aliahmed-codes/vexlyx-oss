@@ -15,19 +15,24 @@ import {
   CardHeader,
 } from "@/components/ui/card";
 import { toast } from "sonner";
+import { ShieldCheck } from "lucide-react";
 
 const loginSchema = z.object({
   email: z.string().email("Invalid email address"),
   password: z.string().min(1, "Password is required"),
 });
 
-type FieldErrors = Partial<Record<"email" | "password" | "root", string>>;
+type FieldErrors = Partial<Record<"email" | "password" | "totpToken" | "root", string>>;
 
 export function LoginForm() {
-  const { login } = useAuth();
+  const { login, verifyTotp } = useAuth();
   const { allowRegistration } = useAuthConfig();
   const [isLoading, setIsLoading] = useState(false);
   const [errors, setErrors] = useState<FieldErrors>({});
+
+  // TOTP step state
+  const [pendingToken, setPendingToken] = useState<string | null>(null);
+  const [totpToken, setTotpToken] = useState("");
 
   const handleSubmit = async (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault();
@@ -52,7 +57,11 @@ export function LoginForm() {
     setIsLoading(true);
 
     try {
-      await login(email, password);
+      const response = await login(email, password);
+      if ("requiresTotp" in response && response.requiresTotp) {
+        setPendingToken(response.pendingToken);
+        return;
+      }
       toast.success("Welcome back!");
     } catch (err) {
       if (err instanceof ApiRequestError) {
@@ -67,6 +76,94 @@ export function LoginForm() {
     }
   };
 
+  const handleTotpSubmit = async (e: React.FormEvent<HTMLFormElement>) => {
+    e.preventDefault();
+    setErrors({});
+
+    if (!totpToken || totpToken.length !== 6) {
+      setErrors({ totpToken: "Enter the 6-digit code from your authenticator app" });
+      return;
+    }
+
+    if (!pendingToken) return;
+
+    setIsLoading(true);
+    try {
+      await verifyTotp(pendingToken, totpToken);
+      toast.success("Welcome back!");
+    } catch (err) {
+      if (err instanceof ApiRequestError) {
+        setErrors({ totpToken: err.message });
+        toast.error(err.message);
+      } else {
+        setErrors({ totpToken: "An unexpected error occurred" });
+        toast.error("An unexpected error occurred");
+      }
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  // --- 2FA Step ---
+  if (pendingToken) {
+    return (
+      <Card className="border-border">
+        <CardHeader className="space-y-1 text-center">
+          <div className="mx-auto mb-2 flex h-10 w-10 items-center justify-center rounded-full bg-primary/10">
+            <ShieldCheck className="h-5 w-5 text-primary" />
+          </div>
+          <h1 className="text-xl font-semibold tracking-tight">
+            Two-factor authentication
+          </h1>
+          <p className="text-sm text-muted-foreground">
+            Enter the 6-digit code from your authenticator app
+          </p>
+        </CardHeader>
+        <CardContent>
+          <form onSubmit={handleTotpSubmit} className="space-y-4">
+            {errors.totpToken && (
+              <div className="rounded-lg border border-destructive/50 bg-destructive/10 px-3 py-2 text-sm text-destructive">
+                {errors.totpToken}
+              </div>
+            )}
+            <div className="space-y-2">
+              <Label htmlFor="totp-token">Authentication code</Label>
+              <Input
+                id="totp-token"
+                name="totpToken"
+                type="text"
+                inputMode="numeric"
+                pattern="[0-9]*"
+                maxLength={6}
+                placeholder="000000"
+                autoComplete="one-time-code"
+                autoFocus
+                value={totpToken}
+                onChange={(e) => setTotpToken(e.target.value.replace(/\D/g, ""))}
+                disabled={isLoading}
+                className="text-center font-mono tracking-widest"
+                aria-invalid={!!errors.totpToken}
+              />
+            </div>
+
+            <Button type="submit" className="w-full" disabled={isLoading || totpToken.length !== 6}>
+              {isLoading ? "Verifying…" : "Verify"}
+            </Button>
+
+            <button
+              type="button"
+              onClick={() => { setPendingToken(null); setTotpToken(""); setErrors({}); }}
+              className="w-full text-center text-sm text-muted-foreground hover:text-foreground"
+            >
+              ← Back to login
+            </button>
+          </form>
+        </CardContent>
+      </Card>
+    );
+  }
+
+  // --- Standard Login Step ---
   return (
     <Card className="border-border">
       <CardHeader className="space-y-1 text-center">
@@ -125,6 +222,15 @@ export function LoginForm() {
           >
             {isLoading ? "Signing in…" : "Sign in"}
           </Button>
+
+          <div className="text-center">
+            <Link
+              href="/forgot-password"
+              className="text-sm text-muted-foreground hover:text-foreground underline-offset-4 hover:underline"
+            >
+              Forgot your password?
+            </Link>
+          </div>
         </form>
 
         {allowRegistration && (

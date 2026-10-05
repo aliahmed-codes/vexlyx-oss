@@ -12,6 +12,9 @@ import {
   Loader2,
   FolderOpen,
   RefreshCw,
+  Shield,
+  PackageOpen,
+  Archive,
 } from "lucide-react";
 import Link from "next/link";
 import { Button } from "@/components/ui/button";
@@ -56,9 +59,17 @@ export default function StandaloneFileManagerPage() {
   const [renameOpen, setRenameOpen] = useState(false);
   const [deleteOpen, setDeleteOpen] = useState(false);
   const [uploadOpen, setUploadOpen] = useState(false);
+  const [chmodOpen, setChmodOpen] = useState(false);
+  const [extractOpen, setExtractOpen] = useState(false);
+  const [compressOpen, setCompressOpen] = useState(false);
   const [newName, setNewName] = useState("");
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [nodeToAct, setNodeToAct] = useState<FileNode | null>(null);
+  // chmod state
+  const [chmodMode, setChmodMode] = useState("644");
+  const [chmodRecursive, setChmodRecursive] = useState(false);
+  // compress state
+  const [compressName, setCompressName] = useState("");
 
   // Fetch project metadata for top bar
   useEffect(() => {
@@ -224,6 +235,78 @@ export default function StandaloneFileManagerPage() {
     }
   };
 
+  // ── Chmod ─────────────────────────────────────────────────────────────────
+
+  const openChmod = (node: FileNode) => {
+    setNodeToAct(node);
+    setChmodMode("644");
+    setChmodRecursive(false);
+    setChmodOpen(true);
+  };
+
+  const handleChmod = async () => {
+    if (!nodeToAct || !/^[0-7]{3,4}$/.test(chmodMode)) return;
+    setIsSubmitting(true);
+    try {
+      await fetchAPI(`/api/files/${projectId}/chmod`, {
+        method: "POST",
+        body: JSON.stringify({ path: nodeToAct.path, mode: chmodMode, recursive: chmodRecursive }),
+      });
+      toast.success(`Permissions set to ${chmodMode}`);
+      setChmodOpen(false);
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Failed to change permissions");
+    } finally {
+      setIsSubmitting(false);
+    }
+  };
+
+  // ── Extract ───────────────────────────────────────────────────────────────
+
+  const handleExtract = async () => {
+    if (!nodeToAct) return;
+    setIsSubmitting(true);
+    try {
+      await fetchAPI(`/api/files/${projectId}/extract`, {
+        method: "POST",
+        body: JSON.stringify({ path: nodeToAct.path, destPath: currentDirPath }),
+      });
+      toast.success("Archive extracted successfully");
+      refreshTree();
+      setExtractOpen(false);
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Failed to extract archive");
+    } finally {
+      setIsSubmitting(false);
+    }
+  };
+
+  // ── Compress ──────────────────────────────────────────────────────────────
+
+  const handleCompress = async () => {
+    if (!nodeToAct || !compressName.trim()) return;
+    setIsSubmitting(true);
+    try {
+      const cleanName = compressName.trim().endsWith(".zip")
+        ? compressName.trim()
+        : `${compressName.trim()}.zip`;
+      const cleanDir = currentDirPath ? `${currentDirPath}/` : "";
+      const destPath = `${cleanDir}${cleanName}`;
+      await fetchAPI(`/api/files/${projectId}/compress`, {
+        method: "POST",
+        body: JSON.stringify({ paths: [nodeToAct.path], destPath }),
+      });
+      toast.success(`Compressed to ${cleanName}`);
+      refreshTree();
+      setCompressOpen(false);
+      setCompressName("");
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Failed to compress");
+    } finally {
+      setIsSubmitting(false);
+    }
+  };
+
   // ── Download ─────────────────────────────────────────────────────────────
 
   const handleDownload = () => {
@@ -352,6 +435,42 @@ export default function StandaloneFileManagerPage() {
             >
               <Download className="h-3.5 w-3.5 text-sky-500" />
               Download
+            </Button>
+          )}
+
+          {selectedNode && isArchive(selectedNode.name) && (
+            <Button
+              variant="outline"
+              size="sm"
+              className="h-8 gap-1.5 text-xs shadow-xs"
+              onClick={() => { setNodeToAct(selectedNode); setExtractOpen(true); }}
+            >
+              <PackageOpen className="h-3.5 w-3.5 text-violet-500" />
+              Extract
+            </Button>
+          )}
+
+          {selectedNode && (
+            <Button
+              variant="outline"
+              size="sm"
+              className="h-8 gap-1.5 text-xs shadow-xs"
+              onClick={() => { setCompressName(selectedNode.name); setNodeToAct(selectedNode); setCompressOpen(true); }}
+            >
+              <Archive className="h-3.5 w-3.5 text-orange-500" />
+              Compress
+            </Button>
+          )}
+
+          {selectedNode && (
+            <Button
+              variant="outline"
+              size="sm"
+              className="h-8 gap-1.5 text-xs shadow-xs"
+              onClick={() => openChmod(selectedNode)}
+            >
+              <Shield className="h-3.5 w-3.5 text-rose-500" />
+              Permissions
             </Button>
           )}
 
@@ -587,6 +706,122 @@ export default function StandaloneFileManagerPage() {
           />
         </DialogContent>
       </Dialog>
+
+      {/* Permissions (chmod) dialog */}
+      <Dialog open={chmodOpen} onOpenChange={setChmodOpen}>
+        <DialogContent className="sm:max-w-sm">
+          <DialogHeader>
+            <DialogTitle>Change Permissions</DialogTitle>
+            <DialogDescription>
+              Set UNIX permissions for{" "}
+              <code className="text-xs bg-muted px-1.5 py-0.5 rounded font-mono">
+                {nodeToAct?.name}
+              </code>
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-3">
+            <div className="space-y-1.5">
+              <label className="text-sm font-medium">Octal mode</label>
+              <Input
+                placeholder="644"
+                value={chmodMode}
+                onChange={(e) => setChmodMode(e.target.value.replace(/[^0-7]/g, "").slice(0, 4))}
+                className="font-mono"
+                maxLength={4}
+              />
+              <p className="text-xs text-muted-foreground">
+                Common values: 644 (files), 755 (dirs/executables), 600 (private), 777 (world-writable)
+              </p>
+            </div>
+            {nodeToAct?.type === "dir" && (
+              <label className="flex items-center gap-2 text-sm cursor-pointer">
+                <input
+                  type="checkbox"
+                  checked={chmodRecursive}
+                  onChange={(e) => setChmodRecursive(e.target.checked)}
+                  className="rounded"
+                />
+                Apply to all contents recursively
+              </label>
+            )}
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setChmodOpen(false)}>Cancel</Button>
+            <Button
+              onClick={() => void handleChmod()}
+              disabled={isSubmitting || !/^[0-7]{3,4}$/.test(chmodMode)}
+            >
+              {isSubmitting && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+              Apply
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Extract archive dialog */}
+      <Dialog open={extractOpen} onOpenChange={setExtractOpen}>
+        <DialogContent className="sm:max-w-sm">
+          <DialogHeader>
+            <DialogTitle>Extract Archive</DialogTitle>
+            <DialogDescription>
+              Extract{" "}
+              <code className="text-xs bg-muted px-1.5 py-0.5 rounded font-mono">
+                {nodeToAct?.name}
+              </code>{" "}
+              into the current directory.
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setExtractOpen(false)}>Cancel</Button>
+            <Button onClick={() => void handleExtract()} disabled={isSubmitting}>
+              {isSubmitting && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+              Extract
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Compress dialog */}
+      <Dialog open={compressOpen} onOpenChange={setCompressOpen}>
+        <DialogContent className="sm:max-w-sm">
+          <DialogHeader>
+            <DialogTitle>Compress to ZIP</DialogTitle>
+            <DialogDescription>
+              Create a ZIP archive containing{" "}
+              <code className="text-xs bg-muted px-1.5 py-0.5 rounded font-mono">
+                {nodeToAct?.name}
+              </code>
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-1.5">
+            <label className="text-sm font-medium">Archive name</label>
+            <Input
+              placeholder="archive.zip"
+              value={compressName}
+              onChange={(e) => setCompressName(e.target.value)}
+              onKeyDown={(e) => { if (e.key === "Enter") void handleCompress(); }}
+            />
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setCompressOpen(false)}>Cancel</Button>
+            <Button onClick={() => void handleCompress()} disabled={isSubmitting || !compressName.trim()}>
+              {isSubmitting && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+              Compress
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
+  );
+}
+
+function isArchive(filename: string): boolean {
+  const lower = filename.toLowerCase();
+  return (
+    lower.endsWith(".zip") ||
+    lower.endsWith(".tar.gz") ||
+    lower.endsWith(".tgz") ||
+    lower.endsWith(".tar.bz2") ||
+    lower.endsWith(".tar")
   );
 }

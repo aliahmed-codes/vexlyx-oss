@@ -25,6 +25,7 @@ export type User = {
   maxMailboxes: number | null;
   maxSubAccounts: number | null;
   permissions: Permission[];
+  twoFactorEnabled: boolean;
   createdAt: Date | string;
 };
 

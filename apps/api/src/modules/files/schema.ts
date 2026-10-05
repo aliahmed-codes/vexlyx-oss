@@ -112,6 +112,24 @@ export const MoveBodySchema = z.object({
   to: z.string().min(1),
 });
 
+export const ChmodBodySchema = z.object({
+  path: z.string().min(1),
+  mode: z
+    .string()
+    .regex(/^[0-7]{3,4}$/, "Mode must be a 3-4 digit octal string (e.g. 644, 755, 0755)"),
+  recursive: z.boolean().optional().default(false),
+});
+
+export const ExtractBodySchema = z.object({
+  path: z.string().min(1),
+  destPath: z.string().optional().default(""),
+});
+
+export const CompressBodySchema = z.object({
+  paths: z.array(z.string().min(1)).min(1),
+  destPath: z.string().min(1),
+});
+
 export type ListQuery = z.infer<typeof ListQuerySchema>;
 export type ReadQuery = z.infer<typeof ReadQuerySchema>;
 export type WriteBody = z.infer<typeof WriteBodySchema>;
@@ -120,3 +138,6 @@ export type RenameBody = z.infer<typeof RenameBodySchema>;
 export type MkdirBody = z.infer<typeof MkdirBodySchema>;
 export type CopyBody = z.infer<typeof CopyBodySchema>;
 export type MoveBody = z.infer<typeof MoveBodySchema>;
+export type ChmodBody = z.infer<typeof ChmodBodySchema>;
+export type ExtractBody = z.infer<typeof ExtractBodySchema>;
+export type CompressBody = z.infer<typeof CompressBodySchema>;

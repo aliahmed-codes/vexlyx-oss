@@ -12,6 +12,9 @@ import {
   MkdirBodySchema,
   CopyBodySchema,
   MoveBodySchema,
+  ChmodBodySchema,
+  ExtractBodySchema,
+  CompressBodySchema,
 } from "./schema.js";
 
 // ---------------------------------------------------------------------------
@@ -245,6 +248,54 @@ export async function fileRoutes(app: FastifyInstance) {
 
         reply.status(200);
         return { success: true, uploads };
+      } catch (err) {
+        handleFileError(err, reply);
+      }
+    },
+  );
+
+  // ── POST /api/files/:id/chmod (F5.24) ────────────────────────────────────
+  app.post(
+    "/:id/chmod",
+    { preHandler: [app.requireAuth] },
+    async (request, reply) => {
+      try {
+        const { id } = ProjectIdParamSchema.parse(request.params);
+        const { path, mode, recursive } = ChmodBodySchema.parse(request.body);
+        await service.chmod(request.userId!, id, path, mode, recursive);
+        return { success: true };
+      } catch (err) {
+        handleFileError(err, reply);
+      }
+    },
+  );
+
+  // ── POST /api/files/:id/extract (F5.24) ──────────────────────────────────
+  app.post(
+    "/:id/extract",
+    { preHandler: [app.requireAuth] },
+    async (request, reply) => {
+      try {
+        const { id } = ProjectIdParamSchema.parse(request.params);
+        const { path, destPath } = ExtractBodySchema.parse(request.body);
+        await service.extract(request.userId!, id, path, destPath);
+        return { success: true };
+      } catch (err) {
+        handleFileError(err, reply);
+      }
+    },
+  );
+
+  // ── POST /api/files/:id/compress (F5.24) ─────────────────────────────────
+  app.post(
+    "/:id/compress",
+    { preHandler: [app.requireAuth] },
+    async (request, reply) => {
+      try {
+        const { id } = ProjectIdParamSchema.parse(request.params);
+        const { paths, destPath } = CompressBodySchema.parse(request.body);
+        await service.compress(request.userId!, id, paths, destPath);
+        return { success: true };
       } catch (err) {
         handleFileError(err, reply);
       }

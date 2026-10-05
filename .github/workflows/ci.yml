@@ -1,0 +1,133 @@
+name: CI
+
+on:
+  push:
+    branches: [main, features]
+  pull_request:
+    branches: [main]
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  lint:
+    name: Lint
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 9
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+
+      - run: pnpm install --frozen-lockfile
+
+      - run: pnpm lint
+
+  typecheck:
+    name: Typecheck
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 9
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+
+      - run: pnpm install --frozen-lockfile
+
+      - name: Generate Prisma Client
+        run: cd apps/api && pnpm db:generate
+
+      - run: pnpm typecheck
+
+  test:
+    name: Tests
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_USER: vexlyx
+          POSTGRES_PASSWORD: vexlyx_dev
+          POSTGRES_DB: vexlyx_test
+        ports:
+          - 5434:5432
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+      redis:
+        image: redis:7-alpine
+        ports:
+          - 6379:6379
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 9
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+
+      - run: pnpm install --frozen-lockfile
+
+      - name: Generate Prisma Client
+        run: cd apps/api && pnpm db:generate
+        env:
+          DATABASE_URL: postgresql://vexlyx:vexlyx_dev@localhost:5434/vexlyx_test
+
+      - name: Run migrations
+        run: cd apps/api && pnpm db:migrate
+        env:
+          DATABASE_URL: postgresql://vexlyx:vexlyx_dev@localhost:5434/vexlyx_test
+
+      - run: pnpm test
+        env:
+          DATABASE_URL: postgresql://vexlyx:vexlyx_dev@localhost:5434/vexlyx_test
+          REDIS_URL: redis://localhost:6379
+          SESSION_SECRET: ci_test_secret_32_chars_minimum
+          ENCRYPTION_KEY: ci_test_encryption_32_chars_here
+          NODE_ENV: test
+
+  build:
+    name: Build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 9
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+
+      - run: pnpm install --frozen-lockfile
+
+      - name: Generate Prisma Client
+        run: cd apps/api && pnpm db:generate
+
+      - run: pnpm build

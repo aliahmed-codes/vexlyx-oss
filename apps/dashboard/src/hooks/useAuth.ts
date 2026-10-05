@@ -34,16 +34,35 @@ export function useAuth() {
     void fetchUser();
   }, [fetchUser]);
 
-  const login = async (email: string, password: string) => {
-    const data = await fetchAPI<{ user: User }>("/api/auth/login", {
+  // Returns { user } on direct success, or { requiresTotp: true, pendingToken } when 2FA is needed.
+  const login = async (
+    email: string,
+    password: string,
+  ): Promise<{ user: User } | { requiresTotp: true; pendingToken: string }> => {
+    const data = await fetchAPI<
+      { user: User } | { requiresTotp: true; pendingToken: string }
+    >("/api/auth/login", {
       method: "POST",
       body: JSON.stringify({ email, password }),
     });
-    // Drop any cached query results from a previous session in this tab —
-    // the QueryClient persists across client-side navigation (no hard
-    // reload on login/logout), so without this a just-logged-in user could
-    // briefly see the previous account's cached data (e.g. its full user
-    // list) until each query's staleTime naturally expires.
+
+    if ("requiresTotp" in data && data.requiresTotp) {
+      return data;
+    }
+
+    const { user } = data as { user: User };
+    queryClient.clear();
+    setState({ user, isLoading: false, isAuthenticated: true });
+    router.push("/dashboard");
+    return { user };
+  };
+
+  // Exchange a pending TOTP token for a real session.
+  const verifyTotp = async (pendingToken: string, totpToken: string): Promise<User> => {
+    const data = await fetchAPI<{ user: User }>("/api/auth/totp/verify-login", {
+      method: "POST",
+      body: JSON.stringify({ pendingToken, totpToken }),
+    });
     queryClient.clear();
     setState({ user: data.user, isLoading: false, isAuthenticated: true });
     router.push("/dashboard");
@@ -77,6 +96,51 @@ export function useAuth() {
     });
   };
 
+  // 2FA setup: generate a secret + QR code (does not yet enable 2FA)
+  const totpSetup = async (): Promise<{ secret: string; qrCodeDataUrl: string; otpauthUrl: string }> => {
+    return fetchAPI<{ secret: string; qrCodeDataUrl: string; otpauthUrl: string }>(
+      "/api/auth/totp/setup",
+      { method: "POST" },
+    );
+  };
+
+  // 2FA enable: verify the first code and activate 2FA
+  const totpEnable = async (token: string): Promise<void> => {
+    await fetchAPI("/api/auth/totp/enable", {
+      method: "POST",
+      body: JSON.stringify({ token }),
+    });
+    await fetchUser();
+  };
+
+  // 2FA disable: confirm password and deactivate 2FA
+  const totpDisable = async (password: string): Promise<void> => {
+    await fetchAPI("/api/auth/totp/disable", {
+      method: "POST",
+      body: JSON.stringify({ password }),
+    });
+    await fetchUser();
+  };
+
+  // Password reset (F5.23)
+  const forgotPassword = async (email: string): Promise<void> => {
+    await fetchAPI("/api/auth/forgot-password", {
+      method: "POST",
+      body: JSON.stringify({ email }),
+    });
+  };
+
+  const resetPassword = async (
+    token: string,
+    password: string,
+    confirmPassword: string,
+  ): Promise<void> => {
+    await fetchAPI("/api/auth/reset-password", {
+      method: "POST",
+      body: JSON.stringify({ token, password, confirmPassword }),
+    });
+  };
+
   const logout = async () => {
     try {
       await fetchAPI("/api/auth/logout", { method: "POST" });
@@ -91,8 +155,14 @@ export function useAuth() {
   return {
     ...state,
     login,
+    verifyTotp,
     register,
     changePassword,
+    totpSetup,
+    totpEnable,
+    totpDisable,
+    forgotPassword,
+    resetPassword,
     logout,
     refetch: fetchUser,
   };

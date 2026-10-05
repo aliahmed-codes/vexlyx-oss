@@ -114,6 +114,18 @@ const envSchema = z.object({
         .map((s) => s.trim().toLowerCase())
         .filter(Boolean),
     ),
+  // Transactional email (F5.23) — SMTP relay for panel-to-user notifications.
+  // Defaults to the Postfix container on port 25 (unauthenticated relay).
+  // Set SMTP_USER + SMTP_PASS to use authenticated relay or a third-party SMTP.
+  SMTP_HOST: z.string().min(1).default("localhost"),
+  SMTP_PORT: z.coerce.number().int().default(25),
+  SMTP_SECURE: z
+    .enum(["true", "false"])
+    .default("false")
+    .transform((v) => v === "true"),
+  SMTP_USER: z.string().optional(),
+  SMTP_PASS: z.string().optional(),
+  MAIL_FROM: z.string().default("noreply@vexlyx.localhost"),
   // Python interpreter used to spawn system/python/*.py scripts (F5.14).
   // Defaults to "python" on win32 / "python3" elsewhere when unset — only
   // set this to override that default (e.g. a venv interpreter, or a

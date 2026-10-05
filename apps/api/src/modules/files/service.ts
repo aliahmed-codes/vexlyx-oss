@@ -2,6 +2,7 @@ import fs from "node:fs/promises";
 import { createReadStream, createWriteStream } from "node:fs";
 import path from "node:path";
 import { pipeline } from "node:stream/promises";
+import { spawn } from "node:child_process";
 import type { PrismaClient } from "@prisma/client";
 import { env } from "../../config/env.js";
 import { safePath } from "./schema.js";
@@ -439,6 +440,118 @@ export class FileService {
     await pipeline(readableStream, ws);
   }
 
+  // ── Chmod (F5.24) ──────────────────────────────────────────────────────
+
+  async chmod(
+    userId: string,
+    projectId: string,
+    relPath: string,
+    mode: string,
+    recursive: boolean,
+  ): Promise<void> {
+    const target = await this.resolveAndGuard(userId, projectId, relPath, true);
+    const root = this.projectRoot(projectId);
+
+    if (target === root) {
+      throw new FileError("Cannot chmod the project root", "CHMOD_ROOT", 400);
+    }
+
+    const modeInt = parseInt(mode.replace(/^0/, ""), 8);
+
+    await fs.chmod(target, modeInt);
+
+    if (recursive) {
+      const stat = await fs.stat(target).catch(() => null);
+      if (stat?.isDirectory()) {
+        await this.chmodRecursive(target, modeInt);
+      }
+    }
+  }
+
+  private async chmodRecursive(dir: string, mode: number): Promise<void> {
+    let entries: import("fs").Dirent[];
+    try {
+      entries = await fs.readdir(dir, { withFileTypes: true });
+    } catch {
+      return;
+    }
+    for (const entry of entries) {
+      const abs = path.join(dir, entry.name);
+      await fs.chmod(abs, mode).catch(() => undefined);
+      if (entry.isDirectory()) {
+        await this.chmodRecursive(abs, mode);
+      }
+    }
+  }
+
+  // ── Extract archive (F5.24) ────────────────────────────────────────────
+
+  async extract(
+    userId: string,
+    projectId: string,
+    archiveRelPath: string,
+    destRelPath: string,
+  ): Promise<void> {
+    const archivePath = await this.resolveAndGuard(userId, projectId, archiveRelPath);
+    const root = this.projectRoot(projectId);
+
+    const destAbs = destRelPath
+      ? await this.resolveAndGuard(userId, projectId, destRelPath, true)
+      : path.dirname(archivePath);
+
+    await fs.mkdir(destAbs, { recursive: true });
+
+    const lowerName = archiveRelPath.toLowerCase();
+    let cmd: string;
+    let args: string[];
+
+    if (lowerName.endsWith(".zip")) {
+      cmd = "unzip";
+      args = ["-o", archivePath, "-d", destAbs];
+    } else if (lowerName.endsWith(".tar.gz") || lowerName.endsWith(".tgz")) {
+      cmd = "tar";
+      args = ["-xzf", archivePath, "-C", destAbs];
+    } else if (lowerName.endsWith(".tar.bz2")) {
+      cmd = "tar";
+      args = ["-xjf", archivePath, "-C", destAbs];
+    } else if (lowerName.endsWith(".tar")) {
+      cmd = "tar";
+      args = ["-xf", archivePath, "-C", destAbs];
+    } else {
+      throw new FileError(
+        "Unsupported archive format. Supported: .zip, .tar, .tar.gz, .tgz, .tar.bz2",
+        "UNSUPPORTED_ARCHIVE",
+        400,
+      );
+    }
+
+    await runCommand(cmd, args, root);
+  }
+
+  // ── Compress to zip (F5.24) ────────────────────────────────────────────
+
+  async compress(
+    userId: string,
+    projectId: string,
+    relPaths: string[],
+    destRelPath: string,
+  ): Promise<void> {
+    const root = this.projectRoot(projectId);
+
+    const absPaths = await Promise.all(
+      relPaths.map((p) => this.resolveAndGuard(userId, projectId, p)),
+    );
+
+    const destAbs = await this.resolveAndGuard(userId, projectId, destRelPath, true);
+
+    if (!destRelPath.toLowerCase().endsWith(".zip")) {
+      throw new FileError("Destination must have a .zip extension", "INVALID_EXTENSION", 400);
+    }
+
+    const relativeEntries = absPaths.map((abs) => path.relative(root, abs));
+    await runCommand("zip", ["-r", destAbs, ...relativeEntries], root);
+  }
+
   // ── Ownership guard ────────────────────────────────────────────────────
 
   private async findOwnedProject(userId: string, projectId: string) {
@@ -457,4 +570,32 @@ export class FileService {
 
     return project;
   }
+}
+
+// ── Helpers ────────────────────────────────────────────────────────────────
+
+function runCommand(cmd: string, args: string[], cwd: string): Promise<void> {
+  return new Promise((resolve, reject) => {
+    const proc = spawn(cmd, args, { cwd, stdio: ["ignore", "pipe", "pipe"] });
+    let stderr = "";
+    proc.stderr?.on("data", (d: Buffer) => { stderr += d.toString(); });
+    proc.on("close", (code) => {
+      if (code !== 0) {
+        reject(new FileError(
+          `Command '${cmd}' failed: ${stderr.trim() || "non-zero exit"}`,
+          "COMMAND_FAILED",
+          500,
+        ));
+      } else {
+        resolve();
+      }
+    });
+    proc.on("error", (err) => {
+      reject(new FileError(
+        `Failed to start '${cmd}': ${err.message}`,
+        "COMMAND_NOT_FOUND",
+        500,
+      ));
+    });
+  });
 }
