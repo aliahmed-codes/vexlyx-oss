@@ -101,6 +101,7 @@ services:
       dockerfile: apps/dashboard/Dockerfile
       args:
         NEXT_PUBLIC_API_URL: https://api.${VEXLYX_DOMAIN}
+        NEXT_PUBLIC_MAIL_HOSTNAME: ${VEXLYX_MAIL_HOSTNAME}
     image: vexlyx-dashboard:latest
     container_name: vexlyx-dashboard
     restart: unless-stopped
