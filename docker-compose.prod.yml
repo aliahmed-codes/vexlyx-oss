@@ -120,6 +120,7 @@ services:
       - traefik-net
     labels:
       - "traefik.enable=true"
+      - "traefik.docker.network=traefik-net"
       - "traefik.http.routers.vexlyx-dashboard.rule=Host(`${VEXLYX_DOMAIN}`)"
       - "traefik.http.routers.vexlyx-dashboard.entrypoints=websecure"
       - "traefik.http.routers.vexlyx-dashboard.tls.certresolver=letsencrypt"
@@ -186,6 +187,7 @@ services:
       - traefik-net
     labels:
       - "traefik.enable=true"
+      - "traefik.docker.network=traefik-net"
       - "traefik.http.routers.vexlyx-api.rule=Host(`api.${VEXLYX_DOMAIN}`)"
       - "traefik.http.routers.vexlyx-api.entrypoints=websecure"
       - "traefik.http.routers.vexlyx-api.tls.certresolver=letsencrypt"
