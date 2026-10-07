@@ -134,8 +134,52 @@ const envSchema = z
     // set this to override that default (e.g. a venv interpreter, or a
     // non-standard binary name/path on the host).
     PYTHON_BIN: z.string().min(1).optional(),
+    // System transactional email (F5.23). With nothing set, panel mail is
+    // sent as noreply@<MAIL_DOMAIN> through the bundled Postfix — no operator
+    // configuration. EMAIL_SMTP_* point the same client at any external SMTP
+    // relay instead (Resend, Postmark, SES, ...) for hosts that block
+    // outbound port 25. Named EMAIL_SMTP_* (not SMTP_*) because SMTP_HOST/
+    // SMTP_PORT are already read by the customer mail-hosting diagnostics.
+    EMAIL_ENABLED: z
+      .enum(["true", "false"])
+      .default("true")
+      .transform((v) => v === "true"),
+    // Unset: "log" outside production (print mail to the API log), "smtp" in production.
+    EMAIL_TRANSPORT: z.enum(["smtp", "log"]).optional(),
+    MAIL_DOMAIN: z.string().min(1).optional(),
+    MAIL_FROM: z.string().email().optional(),
+    BUNDLED_SMTP_HOST: z.string().min(1).default("127.0.0.1"),
+    BUNDLED_SMTP_PORT: z.coerce.number().int().min(1).max(65535).default(25),
+    EMAIL_SMTP_HOST: z.string().min(1).optional(),
+    EMAIL_SMTP_PORT: z.coerce.number().int().min(1).max(65535).default(587),
+    EMAIL_SMTP_SECURE: z
+      .enum(["true", "false"])
+      .default("false")
+      .transform((v) => v === "true"),
+    EMAIL_SMTP_USER: z.string().min(1).optional(),
+    EMAIL_SMTP_PASS: z.string().min(1).optional(),
+    // Admin accounts are root-equivalent on the host, so email-based reset is
+    // off unless an operator explicitly opts in.
+    ALLOW_ADMIN_EMAIL_RESET: z
+      .enum(["true", "false"])
+      .default("false")
+      .transform((v) => v === "true"),
   })
   .superRefine((value, ctx) => {
+    if (value.NODE_ENV === "production" && value.EMAIL_TRANSPORT === "log") {
+      ctx.addIssue({
+        code: "custom",
+        path: ["EMAIL_TRANSPORT"],
+        message: "EMAIL_TRANSPORT=log prints mail (including reset links) to the log and is not allowed in production",
+      });
+    }
+    if (Boolean(value.EMAIL_SMTP_USER) !== Boolean(value.EMAIL_SMTP_PASS)) {
+      ctx.addIssue({
+        code: "custom",
+        path: ["EMAIL_SMTP_USER"],
+        message: "EMAIL_SMTP_USER and EMAIL_SMTP_PASS must be set together",
+      });
+    }
     if (value.NODE_ENV !== "production" || !value.ADMINER_URL) return;
 
     const url = new URL(value.ADMINER_URL);
@@ -172,8 +216,15 @@ function validateEnv() {
     throw new Error(`Invalid environment variables:\n${formatted}`);
   }
 
+  const mailDomain = result.data.MAIL_DOMAIN ?? result.data.PANEL_DOMAIN ?? result.data.BASE_DOMAIN;
+
   return {
     ...result.data,
+    EMAIL_TRANSPORT:
+      result.data.EMAIL_TRANSPORT ??
+      (result.data.NODE_ENV === "production" ? ("smtp" as const) : ("log" as const)),
+    MAIL_DOMAIN: mailDomain,
+    MAIL_FROM: result.data.MAIL_FROM ?? `noreply@${mailDomain}`,
     ADMINER_URL:
       result.data.ADMINER_URL ??
       (result.data.NODE_ENV === "development"

@@ -11,6 +11,8 @@ export {
   TwoFactorChallengeSchema,
   VerifyTotpSetupSchema,
   DisableTwoFactorSchema,
+  ForgotPasswordSchema,
+  ResetPasswordSchema,
 } from "./schemas/auth.js";
 export type {
   RegisterInput,
@@ -19,6 +21,8 @@ export type {
   TwoFactorChallengeInput,
   VerifyTotpSetupInput,
   DisableTwoFactorInput,
+  ForgotPasswordInput,
+  ResetPasswordInput,
 } from "./schemas/auth.js";
 
 export {
@@ -446,3 +450,14 @@ export type {
   AuditLogListResponse,
   AuditLogQuery,
 } from "./schemas/audit-log.js";
+
+export {
+  SystemEmailTestSchema,
+  SYSTEM_EMAIL_EVENTS,
+} from "./schemas/systemEmail.js";
+export type {
+  SystemEmailTestInput,
+  SystemEmailEvent,
+  SystemEmailStatusResponse,
+  SystemEmailDnsRecord,
+} from "./schemas/systemEmail.js";

@@ -1,16 +1,18 @@
 import type { FastifyInstance } from "fastify";
 import rateLimit from "@fastify/rate-limit";
-import { RegisterSchema, LoginSchema, ChangePasswordSchema, TwoFactorChallengeSchema, VerifyTotpSetupSchema, DisableTwoFactorSchema } from "./schema.js";
+import { RegisterSchema, LoginSchema, ChangePasswordSchema, TwoFactorChallengeSchema, VerifyTotpSetupSchema, DisableTwoFactorSchema, ForgotPasswordSchema, ResetPasswordSchema } from "./schema.js";
 import { AuthService, AuthError } from "./service.js";
 import { TwoFactorService } from "./two-factor-service.js";
+import { PasswordResetService } from "./password-reset-service.js";
 import { AuditLogService } from "../audit-log/service.js";
-import { createSession, destroySession } from "../../plugins/auth.js";
+import { SESSION_COOKIE, createSession, destroySession, destroyUserSessions } from "../../plugins/auth.js";
 import { env } from "../../config/env.js";
 
 
 export async function authRoutes(app: FastifyInstance) {
   const service = new AuthService(app.prisma);
   const twoFactor = new TwoFactorService(app.prisma, app.redis, new AuditLogService(app.prisma, app.log));
+  const passwordReset = new PasswordResetService(app.prisma, app.redis, new AuditLogService(app.prisma, app.log));
 
   // Register rate limiting plugin for this scope
   await app.register(rateLimit, {
@@ -128,6 +130,8 @@ export async function authRoutes(app: FastifyInstance) {
       try {
         const data = ChangePasswordSchema.parse(request.body);
         await service.changePassword(request.userId!, data);
+        // The caller stays signed in; every other session ends.
+        await destroyUserSessions(app.prisma, app.redis, request.userId!, request.cookies[SESSION_COOKIE]);
         return { message: "Password changed" };
       } catch (err) {
         if (err instanceof AuthError) {
@@ -136,6 +140,41 @@ export async function authRoutes(app: FastifyInstance) {
             code: err.code,
             details: {},
           });
+          return;
+        }
+        throw err;
+      }
+    },
+  });
+
+  // POST /api/auth/forgot-password — always answers 202 with the same body,
+  // whether or not the email belongs to an account, so it can't be used to
+  // discover which emails are registered.
+  app.post("/forgot-password", {
+    config: { rateLimit: { max: 5, timeWindow: "15 minutes" } },
+    handler: async (request, reply) => {
+      const data = ForgotPasswordSchema.parse(request.body);
+      try {
+        await passwordReset.requestReset(data.email, request.ip);
+      } catch (err) {
+        app.log.error({ err }, "Password reset request failed");
+      }
+      reply.status(202);
+      return { message: "If that email belongs to an account, a reset link is on its way." };
+    },
+  });
+
+  // POST /api/auth/reset-password
+  app.post("/reset-password", {
+    config: { rateLimit: { max: 5, timeWindow: "15 minutes" } },
+    handler: async (request, reply) => {
+      try {
+        const data = ResetPasswordSchema.parse(request.body);
+        await passwordReset.resetPassword(data.token, data.newPassword);
+        return { message: "Password updated. You can now sign in." };
+      } catch (err) {
+        if (err instanceof AuthError) {
+          reply.status(err.statusCode).send({ error: err.message, code: err.code, details: {} });
           return;
         }
         throw err;

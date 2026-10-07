@@ -20,7 +20,7 @@ import type {
   CertType,
 } from "@vexlyx/shared";
 import { env } from "../../config/env.js";
-import { assertUnderQuota } from "../../utils/quota.js";
+import { assertUnderQuota, notifyQuotaThreshold } from "../../utils/quota.js";
 import type { AuditLogService } from "../audit-log/service.js";
 import { PUBLIC_RESOLVER_IPS } from "./resolvers.js";
 
@@ -403,6 +403,7 @@ http:
         certificate: true,
       },
     });
+    void notifyQuotaThreshold(this.prisma, userId, "domain");
 
     // If automatically active (inherited), sync Traefik dynamic router immediately
     if (domain.status === "ACTIVE" && domain.project) {

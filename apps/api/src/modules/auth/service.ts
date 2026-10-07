@@ -1,5 +1,6 @@
 import type { PrismaClient } from "@prisma/client";
 import * as argon2 from "argon2";
+import { notifyUser } from "../system-email/notifier.js";
 import type { RegisterInput, LoginInput, ChangePasswordInput } from "./schema.js";
 
 const PUBLIC_USER_SELECT = {
@@ -93,6 +94,8 @@ export class AuthService {
       where: { id: userId },
       data: { password: hashedPassword },
     });
+
+    notifyUser("password_changed", user.email, { name: user.name });
   }
 
   async getCurrentUser(userId: string) {

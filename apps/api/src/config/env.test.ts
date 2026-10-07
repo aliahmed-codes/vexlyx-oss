@@ -71,3 +71,36 @@ describe("Adminer environment configuration", () => {
     expect(env.ADMINER_URL).toBe("https://db-admin.example.com");
   });
 });
+
+describe("System email environment configuration (F5.23)", () => {
+  it("prints mail to the log outside production and uses SMTP in production", async () => {
+    const dev = await loadEnv({ NODE_ENV: "development", EMAIL_TRANSPORT: undefined });
+    expect(dev.EMAIL_TRANSPORT).toBe("log");
+
+    const prod = await loadEnv({ NODE_ENV: "production", EMAIL_TRANSPORT: undefined });
+    expect(prod.EMAIL_TRANSPORT).toBe("smtp");
+  });
+
+  it("refuses the log transport in production, where it would print reset links", async () => {
+    await expect(loadEnv({ NODE_ENV: "production", EMAIL_TRANSPORT: "log" })).rejects.toThrow(/EMAIL_TRANSPORT/);
+  });
+
+  it("derives the sender from the panel domain with no configuration", async () => {
+    const env = await loadEnv({
+      PANEL_DOMAIN: "panel.example.com",
+      MAIL_DOMAIN: undefined,
+      MAIL_FROM: undefined,
+    });
+    expect(env.MAIL_DOMAIN).toBe("panel.example.com");
+    expect(env.MAIL_FROM).toBe("noreply@panel.example.com");
+  });
+
+  it("requires SMTP username and password together", async () => {
+    await expect(loadEnv({ EMAIL_SMTP_USER: "resend", EMAIL_SMTP_PASS: undefined })).rejects.toThrow(/EMAIL_SMTP_USER/);
+  });
+
+  it("keeps admin email reset off unless explicitly enabled", async () => {
+    expect((await loadEnv({ ALLOW_ADMIN_EMAIL_RESET: undefined })).ALLOW_ADMIN_EMAIL_RESET).toBe(false);
+    expect((await loadEnv({ ALLOW_ADMIN_EMAIL_RESET: "true" })).ALLOW_ADMIN_EMAIL_RESET).toBe(true);
+  });
+});
