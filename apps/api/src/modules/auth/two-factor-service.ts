@@ -5,6 +5,7 @@ import * as argon2 from "argon2";
 import type { PrismaClient } from "@prisma/client";
 import { encrypt, decrypt } from "../../utils/encryption.js";
 import type { AuditLogService } from "../audit-log/service.js";
+import { notifyUser } from "../system-email/notifier.js";
 import { AuthError } from "./service.js";
 
 const CHALLENGE_PREFIX = "2fa-challenge:";
@@ -55,6 +56,7 @@ export class TwoFactorService {
     });
     await this.prisma.user.update({ where: { id: userId }, data: { totpEnabled: true, totpVerifiedAt: new Date() } });
     await this.auditLog.log(userId, "user.2fa_enabled", { type: "User", id: userId }, {});
+    notifyUser("two_factor_enabled", user.email, { name: user.name });
     return { recoveryCodes: codes };
   }
 
@@ -80,6 +82,7 @@ export class TwoFactorService {
     await this.prisma.user.update({ where: { id: userId }, data: { totpSecretEncrypted: null, totpEnabled: false, totpVerifiedAt: null } });
     await this.prisma.recoveryCode.deleteMany({ where: { userId } });
     await this.auditLog.log(userId, "user.2fa_disabled", { type: "User", id: userId }, {});
+    notifyUser("two_factor_disabled", user.email, { name: user.name });
   }
 
   async adminReset(actorId: string, targetUserId: string) {
@@ -88,6 +91,7 @@ export class TwoFactorService {
     await this.prisma.user.update({ where: { id: targetUserId }, data: { totpSecretEncrypted: null, totpEnabled: false, totpVerifiedAt: null } });
     await this.prisma.recoveryCode.deleteMany({ where: { userId: targetUserId } });
     await this.auditLog.log(actorId, "user.2fa_reset", { type: "User", id: targetUserId }, {});
+    notifyUser("two_factor_reset", target.email, { name: target.name });
   }
 
   async storeChallenge(userId: string): Promise<string> {

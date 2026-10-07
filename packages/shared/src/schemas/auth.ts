@@ -59,3 +59,16 @@ export const DisableTwoFactorSchema = z.object({
 });
 
 export type DisableTwoFactorInput = z.infer<typeof DisableTwoFactorSchema>;
+
+export const ForgotPasswordSchema = z.object({
+  email: emailSchema,
+});
+
+export type ForgotPasswordInput = z.infer<typeof ForgotPasswordSchema>;
+
+export const ResetPasswordSchema = z.object({
+  token: z.string().min(32).max(128),
+  newPassword: passwordSchema,
+});
+
+export type ResetPasswordInput = z.infer<typeof ResetPasswordSchema>;

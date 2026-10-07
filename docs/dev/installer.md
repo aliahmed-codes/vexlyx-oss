@@ -139,3 +139,7 @@ Every one of these is already fixed in the current scripts/Dockerfiles — liste
 **Pre-existing application bugs, unrelated to F5.1 itself, surfaced by finally running this stack for real:**
 - `system/python/build_manager.py` had a JS-style `null` in a type annotation (`str | null` instead of `str | None`) — Python evaluates annotations at function-definition time, so this crashed the script's very first import with `NameError`, breaking every project build and one-click install. Fixed in place.
 - `EnvVarEditor.tsx`'s "Add Variable" form had no `autoComplete` attributes, so Chrome's saved-login heuristics offered to autofill the site's own admin credentials into an unrelated Key/Value pair. Fixed with `autoComplete="off"` / `"new-password"`.
+
+## Panel email (F5.23)
+
+The installer passes `MAIL_DOMAIN` (from `VEXLYX_MAIL_DOMAIN`) and `BUNDLED_SMTP_HOST=postfix` to the API container, so password resets and notifications are relayed through the bundled Postfix as `noreply@<mail domain>` with no extra setup. The install summary reminds you to publish SPF/DKIM/DMARC records, which Settings → System Email lists and checks. See [System Transactional Email](system-transactional-email.md).

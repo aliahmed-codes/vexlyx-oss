@@ -191,6 +191,10 @@ services:
       MYSQL_HOST: mysql
       MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD}
       IMAP_HOST: dovecot
+      # System email (F5.23): panel mail is relayed through the bundled Postfix
+      # over the internal network, sent as noreply@${VEXLYX_MAIL_DOMAIN}.
+      BUNDLED_SMTP_HOST: postfix
+      MAIL_DOMAIN: ${VEXLYX_MAIL_DOMAIN}
       WEBMAIL_URL: https://webmail.${VEXLYX_DOMAIN}
       # Adminer stays disabled in production unless this is set to a protected
       # HTTPS URL in the secrets file (see docs/dev/database-provisioning.md).

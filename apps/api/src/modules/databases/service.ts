@@ -6,7 +6,7 @@ import { fileURLToPath } from "node:url";
 import type { PrismaClient, DatabaseType } from "@prisma/client";
 import { env } from "../../config/env.js";
 import { encrypt, decrypt } from "../../utils/encryption.js";
-import { assertUnderQuota } from "../../utils/quota.js";
+import { assertUnderQuota, notifyQuotaThreshold } from "../../utils/quota.js";
 import { EnvService } from "../env/service.js";
 import type { AuditLogService } from "../audit-log/service.js";
 import type {
@@ -261,6 +261,7 @@ export class DatabaseService {
         },
       },
     });
+    void notifyQuotaThreshold(this.prisma, userId, "database");
 
     // 6. Optionally auto-inject connection env vars into project
     if (input.projectId && input.autoInjectEnv !== false) {

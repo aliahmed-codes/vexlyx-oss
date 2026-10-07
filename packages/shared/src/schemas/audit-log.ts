@@ -30,6 +30,8 @@ export const AUDIT_ACTIONS = [
   "user.2fa_enabled",
   "user.2fa_disabled",
   "user.2fa_reset",
+  "user.password_reset",
+  "system_email.test_sent",
 ] as const;
 export type AuditAction = (typeof AUDIT_ACTIONS)[number];
 

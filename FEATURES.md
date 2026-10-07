@@ -31,10 +31,10 @@ This document is the **single source of truth** for all Vexlyx features.
 | Phase 2: Multi-Runtime Support | 🟢 COMPLETED | 100% (8/8) |
 | Phase 3: Domain & DNS | 🟡 IN PROGRESS | 80% (4/5) |
 | Phase 4: Email Server | 🟡 IN PROGRESS | 88% (7/8) |
-| Phase 5: System & Administration | 🟡 IN PROGRESS | 45% (9/20) |
+| Phase 5: System & Administration | 🟡 IN PROGRESS | 50% (10/20) |
 | Phase 6: Ecosystem & Launch | 🟡 IN PROGRESS | 33% (1/3) |
 
-**Overall Completion:** 73% (43/59 features)
+**Overall Completion:** 75% (44/59 features)
 
 ---
 
@@ -2192,7 +2192,7 @@ Found live while testing custom domain attachment on `panel.mindgera.site`: afte
 ---
 
 ### F5.23 — System Transactional Email (Panel-to-User Notifications)
-**Status:** 🔴 NOT STARTED
+**Status:** 🟢 COMPLETED
 
 **Description:**
 Surfaced while planning F5.18 (Audit Log): Vexlyx has no way to email its own panel users for critical/informational events (password reset, security alerts like a new-role/2FA change, quota-warning notices, backup-failure notices, audit events, etc.). This is distinct from the existing `docker/postfix` stack (F4.1, completed), which is customer-facing mail *hosting* — it lets Vexlyx-hosted domains send/receive mail via their own mailboxes, with no involvement from the Vexlyx application itself. There is currently no password-reset flow, no email-verification flow, and no notification/email-template model in the schema at all — this would need to be built from scratch, not just wired up.
@@ -2205,13 +2205,13 @@ Surfaced while planning F5.18 (Audit Log): Vexlyx has no way to email its own pa
 - `User` model (`apps/api/prisma/schema.prisma:142`) has no `resetToken`, `emailVerified`, or similar fields; no `Notification`/`EmailTemplate` model exists anywhere in the schema.
 
 **Acceptance Criteria:**
-- [ ] Decide delivery mechanism (internal Postfix relay vs. third-party provider) — needs explicit user sign-off given CLAUDE.md's "no new dependencies without confirming" rule
-- [ ] Password-reset flow (request → emailed token → reset), since none exists today
-- [ ] Critical/security notifications: role change, 2FA enabled/disabled (once F5.17 ships), new login from unrecognized location (if in scope), backup failure
-- [ ] Quota-warning notification (approaching/at plan limits)
-- [ ] Simple email template system (plain layout + subject/body per event type), no marketing/HTML-builder scope
-- [ ] Per-install SMTP/provider configuration (env vars, documented in `.env.example` per CLAUDE.md §14 process)
-- [ ] Does not duplicate or interfere with the existing customer mail-hosting stack (F4.1)
+- [x] Decide delivery mechanism (internal Postfix relay vs. third-party provider) — needs explicit user sign-off given CLAUDE.md's "no new dependencies without confirming" rule
+- [x] Password-reset flow (request → emailed token → reset), since none exists today
+- [x] Critical/security notifications: role change, 2FA enabled/disabled (once F5.17 ships), backup failure (new login from unrecognized location deferred — needs login history)
+- [x] Quota-warning notification (approaching/at plan limits)
+- [x] Simple email template system (plain layout + subject/body per event type), no marketing/HTML-builder scope
+- [x] Per-install SMTP/provider configuration (env vars, documented in `.env.example` per CLAUDE.md §14 process)
+- [x] Does not duplicate or interfere with the existing customer mail-hosting stack (F4.1)
 
 **Test Plan:**
 1. Trigger password reset → email received with working, single-use, expiring token
