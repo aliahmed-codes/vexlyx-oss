@@ -106,6 +106,7 @@ const groups: Group[] = [
       "reference/firewall",
       "reference/service-status",
       "reference/docker-cleanup",
+      "reference/ci-cd",
       "reference/settings-page",
       "reference/dashboard-home",
     ],
