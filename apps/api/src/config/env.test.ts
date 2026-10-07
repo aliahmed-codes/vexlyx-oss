@@ -92,7 +92,7 @@ describe("System email environment configuration (F5.23)", () => {
       MAIL_FROM: undefined,
     });
     expect(env.MAIL_DOMAIN).toBe("panel.example.com");
-    expect(env.MAIL_FROM).toBe("noreply@panel.example.com");
+    expect(env.MAIL_FROM).toBe("notifications@panel.example.com");
   });
 
   it("requires SMTP username and password together", async () => {

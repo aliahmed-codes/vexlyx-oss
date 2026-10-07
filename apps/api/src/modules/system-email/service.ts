@@ -135,6 +135,7 @@ export class SystemEmailService {
       return required.map((r) => ({
         type: r.type,
         name: r.name,
+        host: r.name === "@" ? env.MAIL_DOMAIN : `${r.name}.${env.MAIL_DOMAIN}`,
         value: r.value,
         purpose: r.purpose as SystemEmailDnsRecord["purpose"],
         present: isRecordLive(r, live),

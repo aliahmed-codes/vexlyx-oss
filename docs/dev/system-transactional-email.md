@@ -1,6 +1,6 @@
 # System Transactional Email (F5.23)
 
-The panel's own outbound email: password resets, security alerts, quota warnings and backup-failure notices. It works with **no operator configuration** — mail is sent as `noreply@<your panel domain>` through the Postfix that ships with Vexlyx — and can be pointed at any external SMTP provider with a few environment variables.
+The panel's own outbound email: password resets, security alerts, quota warnings and backup-failure notices. It works with **no operator configuration** — mail is sent as `notifications@<your panel domain>` through the Postfix that ships with Vexlyx — and can be pointed at any external SMTP provider with a few environment variables.
 
 This is separate from the customer mail-hosting stack ([Postfix](email/postfix.md), F4.1), which serves mailboxes for hosted domains. System email only *sends*, and only from the panel's own sender address.
 
@@ -28,7 +28,7 @@ This is separate from the customer mail-hosting stack ([Postfix](email/postfix.m
                           ┌───────────────────────────┴──────────────────────────┐
                           ▼                                                      ▼
               bundled Postfix (default)                          external relay (EMAIL_SMTP_HOST)
-              OpenDKIM signs noreply@MAIL_DOMAIN                 Resend, Postmark, SES, Mailgun, ...
+              OpenDKIM signs notifications@MAIL_DOMAIN                 Resend, Postmark, SES, Mailgun, ...
 ```
 
 - `modules/system-email/notifier.ts` is a module-level singleton, so any service sends a notification with one line and tests that never register it get a silent no-op.
@@ -56,13 +56,18 @@ All variables are optional. See `apps/api/.env.example`.
 | --- | --- | --- |
 | `EMAIL_ENABLED` | `true` | Master switch. When `false`, nothing is queued. |
 | `EMAIL_TRANSPORT` | `smtp` in production, `log` otherwise | `log` prints each message (including reset links) to the API log. Refused in production. |
-| `MAIL_DOMAIN` | `PANEL_DOMAIN`, then `BASE_DOMAIN` | Domain of the sender address. |
-| `MAIL_FROM` | `noreply@<MAIL_DOMAIN>` | Sender address. |
+| `MAIL_DOMAIN` | `PANEL_DOMAIN`, then `BASE_DOMAIN` (the production compose file sets it to the panel domain) | Domain of the sender address. |
+| `MAIL_FROM` | `notifications@<MAIL_DOMAIN>` | Sender address. |
+| `MAIL_REPLY_TO` | unset (the installer sets the admin email) | Where replies go. The sender address has no mailbox, so without this replies bounce. |
 | `BUNDLED_SMTP_HOST` / `BUNDLED_SMTP_PORT` | `127.0.0.1` / `25` | Where the bundled Postfix is reached. The production compose file sets the host to `postfix`. |
 | `EMAIL_SMTP_HOST`, `_PORT`, `_SECURE`, `_USER`, `_PASS` | unset (port `587`) | Use an external relay instead. User and password must be set together. |
 | `ALLOW_ADMIN_EMAIL_RESET` | `false` | Allow password reset by email for admin accounts. |
 
 The external-relay variables are named `EMAIL_SMTP_*` rather than `SMTP_*` because `SMTP_HOST` and `SMTP_PORT` are already used by the customer mail-hosting diagnostics.
+
+### Why this sender address
+
+Mail comes from the **panel (sub)domain**, e.g. `notifications@panel.example.com`, not the apex domain. A dedicated subdomain keeps the reputation of automated mail separate from your people's mail on the main domain. The local part is `notifications` rather than `noreply`, because mailbox providers (Outlook since 2024) treat no-reply senders less favourably; replies are redirected to the admin through `Reply-To`.
 
 ### Deliverability
 

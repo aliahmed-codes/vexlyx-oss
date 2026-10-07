@@ -22,7 +22,8 @@ describe("sendEmail", () => {
   it("sends from the configured address with auto-reply suppression over SMTP", async () => {
     vi.resetModules();
     process.env.EMAIL_TRANSPORT = "smtp";
-    process.env.MAIL_FROM = "noreply@panel.example.com";
+    process.env.MAIL_FROM = "notifications@panel.example.com";
+    process.env.MAIL_REPLY_TO = "admin@example.com";
     const { sendEmail } = await import("./sender.js");
     const sendMail = vi.fn(async () => ({ messageId: "<abc@panel.example.com>" }));
 
@@ -31,13 +32,15 @@ describe("sendEmail", () => {
     expect(id).toBe("<abc@panel.example.com>");
     expect(sendMail).toHaveBeenCalledWith(
       expect.objectContaining({
-        from: { name: "Vexlyx", address: "noreply@panel.example.com" },
+        from: { name: "Vexlyx", address: "notifications@panel.example.com" },
+        replyTo: "admin@example.com",
         to: "ada@example.com",
         headers: expect.objectContaining({ "Auto-Submitted": "auto-generated" }),
       }),
     );
     delete process.env.EMAIL_TRANSPORT;
     delete process.env.MAIL_FROM;
+    delete process.env.MAIL_REPLY_TO;
   });
 
   it("lets a transport error reach the caller so the queue can retry", async () => {

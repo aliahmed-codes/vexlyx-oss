@@ -21,6 +21,8 @@ export type SystemEmailTestInput = z.infer<typeof SystemEmailTestSchema>;
 export interface SystemEmailDnsRecord {
   type: string;
   name: string;
+  /** Full host name to create the record at, e.g. default._domainkey.panel.example.com. */
+  host: string;
   value: string;
   purpose: "SPF" | "DKIM" | "DMARC";
   /** Result of the live public-DNS lookup; null when not checked. */

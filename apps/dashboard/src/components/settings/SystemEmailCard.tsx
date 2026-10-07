@@ -131,7 +131,7 @@ export function SystemEmailCard() {
                     >
                       <div className="min-w-0">
                         <p className="truncate font-mono text-xs font-medium">
-                          {record.purpose} — {record.type} {record.name}
+                          {record.purpose} — {record.type} {record.host}
                         </p>
                         <p className="truncate font-mono text-xs text-muted-foreground">{record.value}</p>
                       </div>

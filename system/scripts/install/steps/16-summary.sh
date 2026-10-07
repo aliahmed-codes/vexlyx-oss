@@ -43,8 +43,8 @@ else
 fi
 echo ""
 echo "  Panel emails (password resets, security alerts) are sent as"
-echo "  noreply@${VEXLYX_MAIL_DOMAIN} from this server. To keep them out of spam, publish"
-echo "  an SPF, DKIM and DMARC record for ${VEXLYX_MAIL_DOMAIN} — Settings > System Email in"
+echo "  notifications@${VEXLYX_DOMAIN} from this server. To keep them out of spam, publish"
+echo "  an SPF, DKIM and DMARC record for ${VEXLYX_DOMAIN} — Settings > System Email in"
 echo "  the dashboard lists the exact values and checks them live."
 echo "  If your host blocks outbound port 25, set EMAIL_SMTP_HOST (and credentials) to use"
 echo "  an external SMTP relay instead — see docs/dev/system-transactional-email.md."
