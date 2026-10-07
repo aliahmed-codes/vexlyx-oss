@@ -58,6 +58,17 @@ that's the single source of truth synced into the public
 [docs site](https://docs.vexlyx.atlantiqs.org). A new feature gets a new page there; see any
 existing page for the expected shape (what it does, architecture, how to test, how to extend).
 
+## CI and releases
+
+Every pull request runs the same four checks in GitHub Actions (`lint`, `typecheck`, `test`, `build`), so run them locally first. Maintainers cut a release by pushing a version tag:
+
+```bash
+git tag v0.1.0
+git push origin v0.1.0
+```
+
+That creates a GitHub release with notes generated from your commit messages (which is why the `type(scope): summary` format above matters) and publishes the dashboard and API Docker images to GHCR. See [`docs/dev/ci-cd.md`](docs/dev/ci-cd.md) for details.
+
 ## Reporting bugs / requesting features
 
 Open a GitHub issue. For a bug, include repro steps and what you expected instead. For a security
