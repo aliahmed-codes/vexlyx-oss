@@ -32,6 +32,7 @@ import { cn } from "@/lib/utils";
 import { formatTime } from "@/lib/datetime";
 import { useRefreshAnimation, refreshIconClassName } from "@/hooks/useRefreshAnimation";
 import { TwoFactorCard } from "./TwoFactorCard";
+import { SystemEmailCard } from "./SystemEmailCard";
 import type { DnsRecordVerification } from "@vexlyx/shared";
 
 // IANA timezone identifiers, sourced from the runtime's own tz database
@@ -280,6 +281,9 @@ export function SettingsPage() {
           )}
         </CardContent>
       </Card>
+
+      {/* System transactional email status (F5.23), ADMIN only */}
+      {isAdmin && <SystemEmailCard />}
 
       {/* DNS Records & Public IP reference (F5.9), ADMIN only */}
       {isAdmin && (
