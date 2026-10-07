@@ -17,7 +17,7 @@ function setup(user: typeof USER | null = USER) {
   const prisma = {
     user: {
       findUnique: vi.fn(async () => user),
-      update: vi.fn(async () => undefined),
+      update: vi.fn(async (_args: { data: { password: string } }) => undefined),
     },
     passwordResetToken: {
       deleteMany: vi.fn(async ({ where }: { where: { userId: string; usedAt?: null; id?: { not: string } } }) => {
@@ -119,7 +119,7 @@ describe("resetPassword", () => {
 
     await service.resetPassword(token, "a-brand-new-password");
 
-    const update = prisma.user.update.mock.calls[0]![0] as unknown as { data: { password: string } };
+    const update = prisma.user.update.mock.calls[0]![0];
     expect(update.data.password).toMatch(/^\$argon2id\$/);
     expect(await argon2.verify(update.data.password, "a-brand-new-password")).toBe(true);
     expect(prisma.session.deleteMany).toHaveBeenCalled();

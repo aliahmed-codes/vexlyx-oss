@@ -1,4 +1,4 @@
-import nodemailer, { type Transporter } from "nodemailer";
+import nodemailer, { type SendMailOptions, type Transporter } from "nodemailer";
 import type { FastifyBaseLogger } from "fastify";
 import { env } from "../../config/env.js";
 
@@ -62,7 +62,7 @@ function getTransporter(): Transporter {
 export async function sendEmail(
   message: OutgoingEmail,
   logger: FastifyBaseLogger,
-  transporter: Pick<Transporter, "sendMail"> = getTransporter(),
+  transporter: { sendMail(options: SendMailOptions): Promise<unknown> } = getTransporter(),
 ): Promise<string | null> {
   if (transportKind() === "log") {
     logger.info({ to: message.to, subject: message.subject }, `[email:log]\n${message.text}`);
