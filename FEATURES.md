@@ -1006,6 +1006,8 @@ Allow users to attach custom domains to projects. Validate domain ownership and 
 
 **Acceptance Criteria:**
 - [x] `POST /api/domains` — add domain to project
+- [x] `PATCH /api/domains/:id` — assign, move, or unassign an existing owned domain without deleting DNS, certificates, or mail (issue #14)
+- [x] Domain cards provide project assignment; project tabs offer to attach existing owned domains and confirm moves
 - [x] Domain validation via DNS TXT record
 - [x] `GET /api/domains` — list domains
 - [x] `DELETE /api/domains/:id` — remove domain

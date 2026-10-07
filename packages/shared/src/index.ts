@@ -104,6 +104,7 @@ export {
   SetDnsModeSchema,
   HostnameSchema,
   CreateDomainSchema,
+  UpdateDomainSchema,
   DomainListQuerySchema,
   isWildcardHostname,
   getParentDomain,
@@ -111,6 +112,7 @@ export {
 } from "./schemas/domains.js";
 export type {
   DomainStatus,
+  UpdateDomainInput,
   DnsMode,
   SetDnsModeInput,
   DnsDelegationCheckResponse,
