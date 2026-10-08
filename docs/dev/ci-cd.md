@@ -30,7 +30,14 @@ Keep commit messages in `type(scope): summary` form so they land in the right ch
 
 ## Branch protection
 
-Once CI is stable, require the `lint`, `typecheck`, `test` and `build` checks on `main` in the repository settings (and `Docs / build` for docs changes).
+`main` is protected by the **Protect main** repository ruleset (Settings → Rules → Rulesets), with no bypass actors, so it applies to admins as well:
+
+- pull request required, with 1 approving review from a code owner ([`.github/CODEOWNERS`](https://github.com/atlantiqshq/vexlyx/blob/main/.github/CODEOWNERS));
+- stale approvals are dismissed on new commits, the last pusher cannot approve, and review conversations must be resolved;
+- required status checks: `lint`, `typecheck`, `test`, `build`;
+- no deletion and no force-push of `main`.
+
+Because the author of a pull request cannot approve it, a code owner's own pull request needs another code owner. Add a second owner to `.github/CODEOWNERS` when the team grows. In an emergency an admin can set the ruleset to "Disabled" temporarily and must re-enable it afterwards.
 
 ## How to test
 

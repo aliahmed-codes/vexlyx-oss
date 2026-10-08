@@ -58,6 +58,16 @@ that's the single source of truth synced into the public
 [docs site](https://docs.vexlyx.atlantiqs.org). A new feature gets a new page there; see any
 existing page for the expected shape (what it does, architecture, how to test, how to extend).
 
+## Reviews and merging
+
+`main` is protected by a repository ruleset. A pull request can only be merged when:
+
+- the four CI checks (`lint`, `typecheck`, `test`, `build`) pass;
+- it has at least one approving review from a code owner (see [`.github/CODEOWNERS`](.github/CODEOWNERS)), and that approver is not the author or the person who pushed last;
+- new commits dismiss earlier approvals, and all review conversations are resolved.
+
+Nobody can push to `main` directly, force-push it or delete it, and the rules apply to admins too. Please don't merge your own pull request.
+
 ## CI and releases
 
 Every pull request runs the same four checks in GitHub Actions (`lint`, `typecheck`, `test`, `build`), so run them locally first. Maintainers cut a release by pushing a version tag:
