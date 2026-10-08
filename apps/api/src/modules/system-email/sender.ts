@@ -71,6 +71,7 @@ export async function sendEmail(
 
   const info = (await transporter.sendMail({
     from: { name: "Vexlyx", address: env.MAIL_FROM },
+    ...(env.MAIL_REPLY_TO ? { replyTo: env.MAIL_REPLY_TO } : {}),
     to: message.to,
     subject: message.subject,
     text: message.text,

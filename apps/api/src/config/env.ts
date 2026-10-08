@@ -135,7 +135,7 @@ const envSchema = z
     // non-standard binary name/path on the host).
     PYTHON_BIN: z.string().min(1).optional(),
     // System transactional email (F5.23). With nothing set, panel mail is
-    // sent as noreply@<MAIL_DOMAIN> through the bundled Postfix — no operator
+    // sent as notifications@<MAIL_DOMAIN> through the bundled Postfix — no operator
     // configuration. EMAIL_SMTP_* point the same client at any external SMTP
     // relay instead (Resend, Postmark, SES, ...) for hosts that block
     // outbound port 25. Named EMAIL_SMTP_* (not SMTP_*) because SMTP_HOST/
@@ -146,8 +146,17 @@ const envSchema = z
       .transform((v) => v === "true"),
     // Unset: "log" outside production (print mail to the API log), "smtp" in production.
     EMAIL_TRANSPORT: z.enum(["smtp", "log"]).optional(),
-    MAIL_DOMAIN: z.string().min(1).optional(),
+    MAIL_DOMAIN: z
+      .string()
+      .optional()
+      .transform((v) => (v ? v : undefined)),
     MAIL_FROM: z.string().email().optional(),
+    // Where replies go (the operator's inbox) — the sender itself has no mailbox.
+    MAIL_REPLY_TO: z
+      .string()
+      .optional()
+      .transform((v) => (v ? v : undefined))
+      .pipe(z.string().email().optional()),
     BUNDLED_SMTP_HOST: z.string().min(1).default("127.0.0.1"),
     BUNDLED_SMTP_PORT: z.coerce.number().int().min(1).max(65535).default(25),
     EMAIL_SMTP_HOST: z.string().min(1).optional(),
@@ -224,7 +233,7 @@ function validateEnv() {
       result.data.EMAIL_TRANSPORT ??
       (result.data.NODE_ENV === "production" ? ("smtp" as const) : ("log" as const)),
     MAIL_DOMAIN: mailDomain,
-    MAIL_FROM: result.data.MAIL_FROM ?? `noreply@${mailDomain}`,
+    MAIL_FROM: result.data.MAIL_FROM ?? `notifications@${mailDomain}`,
     ADMINER_URL:
       result.data.ADMINER_URL ??
       (result.data.NODE_ENV === "development"

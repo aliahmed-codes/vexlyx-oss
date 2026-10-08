@@ -142,4 +142,4 @@ Every one of these is already fixed in the current scripts/Dockerfiles — liste
 
 ## Panel email (F5.23)
 
-The installer passes `MAIL_DOMAIN` (from `VEXLYX_MAIL_DOMAIN`) and `BUNDLED_SMTP_HOST=postfix` to the API container, so password resets and notifications are relayed through the bundled Postfix as `noreply@<mail domain>` with no extra setup. The install summary reminds you to publish SPF/DKIM/DMARC records, which Settings → System Email lists and checks. See [System Transactional Email](system-transactional-email.md).
+The installer passes `MAIL_DOMAIN` (the panel domain), `MAIL_REPLY_TO` (the admin email) and `BUNDLED_SMTP_HOST=postfix` to the API container, so password resets and notifications are relayed through the bundled Postfix as `notifications@<panel domain>` with no extra setup. The install summary reminds you to publish SPF/DKIM/DMARC records, which Settings → System Email lists and checks. See [System Transactional Email](system-transactional-email.md).
