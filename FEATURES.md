@@ -31,10 +31,10 @@ This document is the **single source of truth** for all Vexlyx features.
 | Phase 2: Multi-Runtime Support | 🟢 COMPLETED | 100% (8/8) |
 | Phase 3: Domain & DNS | 🟡 IN PROGRESS | 80% (4/5) |
 | Phase 4: Email Server | 🟡 IN PROGRESS | 88% (7/8) |
-| Phase 5: System & Administration | 🟡 IN PROGRESS | 50% (10/20) |
+| Phase 5: System & Administration | 🟡 IN PROGRESS | 48% (10/21) |
 | Phase 6: Ecosystem & Launch | 🟡 IN PROGRESS | 33% (1/3) |
 
-**Overall Completion:** 75% (44/59 features)
+**Overall Completion:** 73% (44/60 features)
 
 ---
 
@@ -2335,6 +2335,74 @@ Hosted DNS (F5.25) could not actually serve the internet: CoreDNS was bound to l
 
 **Developer Docs:**
 - **Location:** `docs/dev/dns-management.md` (§9, "Public authoritative DNS")
+
+---
+
+### F5.28 — Scheduled Tasks (Cron Jobs)
+**Status:** 🔴 NOT STARTED
+
+**Description:**
+Users cannot schedule recurring work for their projects. A Laravel app needs `php artisan schedule:run` every minute, a WordPress site needs `wp-cron.php` triggered on a real schedule instead of on page views, and a Node or Python app often needs a nightly cleanup or report script. Today the only options are an external cron service or shell access to the host, and the panel deliberately gives users neither. The platform already schedules its own work with BullMQ (backups F5.3, Docker cleanup F5.15, both timezone-aware per F5.13), runs each project in its own container, and can email users (F5.23), so this feature adds a user-facing version of the same machinery: a command run **inside a project's container** on a cron schedule, with run history, a "Run now" button and failure emails.
+
+**Competitor research (2026):**
+- **cPanel**: a Cron Jobs page with common-interval presets and a free-form 5-field editor. Output of each run is emailed to the account by default, which is also its biggest annoyance (users silence it with `>/dev/null 2>&1`); the contact address is configurable. ([cPanel cron email behaviour](https://www.inmotionhosting.com/support/email/cron-job-email.md))
+- **Plesk**: "Scheduled Tasks" with three task types (run a command, fetch a URL, run a PHP script) and a notification choice per task: do not notify, errors only, every time. ([Plesk: scheduling tasks](https://www.plesk.com/kb/docs/scheduling-tasks-4/))
+- **HestiaCP**: a basic Cron section (add a command and a schedule, with simple presets); no run history, no output capture, no failure notification. ([Hestia cron guide](https://fornex.com/help/cron-hestia-cp/))
+- **Coolify**: Scheduled Tasks on an application or service, each with a name, command, 5-field cron or named frequency, timeout and target container; runs the command in a shell inside the running container. ([Coolify docs](https://coolify.io/docs/core/automation/scheduled-tasks/overview))
+- **Dokploy**: Schedule Jobs with four scopes (application, compose, server, Dokploy itself); application and compose jobs use `docker exec`, and every run writes a log entry with its output and status. ([Dokploy docs](https://docs.dokploy.com/docs/core/schedule-jobs))
+- **Takeaway**: the traditional panels offer presets and email but little observability; the PaaS tools run commands inside containers with a timeout and per-run logs. Vexlyx can combine both: Plesk-style presets and "errors only" notification on top of Coolify/Dokploy-style container execution and run history. Where it can differ: runs never touch the host, failures email **once per streak** instead of on every run, and the schedule respects the server timezone setting.
+
+**Proposed plan (for whoever picks this up):**
+1. **Data model** (one Prisma migration): `ScheduledTask` (`id`, `projectId`, `userId`, `name`, `command`, `schedule` (5-field cron), `timeoutSeconds` default 300, `enabled` default true, `notifyOnFailure` default true, `consecutiveFailures`, `lastRunAt`, timestamps; cascades with the project) and `ScheduledTaskRun` (`taskId`, `trigger` SCHEDULED or MANUAL, `status` RUNNING/SUCCESS/FAILED/TIMEOUT/SKIPPED, `exitCode`, `output` capped at 64 KB, `startedAt`, `finishedAt`; only the latest 50 runs per task are kept).
+2. **Module** `apps/api/src/modules/scheduled-tasks/` (`routes.ts`, `service.ts`, `schema.ts`, `scheduler.ts`) following the existing layering; Zod schemas shared via `packages/shared/src/schemas/scheduledTasks.ts`. Endpoints: list/create/update/delete under `/api/projects/:id/scheduled-tasks`, `POST .../:taskId/run` (run now), `GET .../:taskId/runs`.
+3. **Scheduling** mirrors `backups/scheduler.ts` and `cleanup/scheduler.ts`: one BullMQ `upsertJobScheduler` per task (`scheduled-task:<id>`) with `tz` from the F5.13 system timezone. All schedulers are re-armed on API boot, removed on disable or delete, and re-upserted when the timezone changes. Missed runs while the API was down are not back-filled (documented).
+4. **Execution goes through the Python system layer**, never from a route: add an `exec` action to `system/python/docker_manager.py` that runs `docker exec <container> sh -c <command>` with the command passed as an argument list (never interpolated into a host shell), a hard timeout, and an output cap. The container name is resolved at run time from the project (the `vexlyx-<service_name>-app-1` convention already used there), so a redeploy that replaces the container does not break the task.
+5. **Guards**: a Redis lock per task so a run never overlaps its predecessor (the new run is recorded as SKIPPED); a run is SKIPPED when the project is not running; minimum interval of one minute (6-field seconds expressions are rejected); command length capped at 2,000 characters; timeout 1 to 3,600 seconds.
+6. **Authorization and limits**: owners manage tasks of their own projects, resellers those of their sub-accounts, admins all (the same ownership scoping as projects). New nullable quota `maxScheduledTasks` on `User` through the F5.20 quota machinery (`assertUnderQuota`, `notifyQuotaThreshold`). Every create/update/delete/run-now is written to the audit log (F5.18).
+7. **Failure emails (F5.23)**: new `scheduled_task_failed` event, sent after 3 consecutive failures and not again until the task succeeds once. A per-task toggle turns it off.
+8. **UI**: a "Scheduled Tasks" panel on the project detail page next to the other panels (`apps/dashboard/src/components/projects/`): list with enable switch, last status and next run; create/edit dialog with presets (every minute, hourly, daily, weekly) plus a custom cron field that previews the next runs and labels the timezone; "Run now"; a run-history drawer showing output in the always-dark terminal style from the design system. Skeleton loading, empty state with a CTA, confirmation before delete, refresh button with the `isRefreshing` animation.
+9. **Presets for common stacks**: Laravel (`php artisan schedule:run`, every minute) and WordPress (`php wp-cron.php`, every 5 minutes; a note recommends setting `DISABLE_WP_CRON`). Confirm in the actual runtime images which binaries exist (for example `wp`) before shipping a preset that needs them.
+10. **Out of scope for the first version**: fetch-URL tasks (webhook style), host-level "server tasks" for admins, second-level schedules, job chaining or dependencies, per-run environment overrides, and importing an existing crontab. Track as follow-ups.
+
+**Risks to handle in the implementation:**
+- Users run arbitrary commands: contained to their own container and its resource limits; never `docker exec` on a container the user does not own (ownership check on every run, including scheduled ones).
+- Output can contain secrets: shown only to the project's owner (and admins), size-capped, never written to the application log at info level.
+- Many tasks firing in the same minute: BullMQ worker concurrency cap, and the one-minute minimum interval.
+- Daylight-saving transitions: rely on the cron library's `tz` handling and document that a 02:30 job may skip or repeat once a year.
+
+**Acceptance Criteria:**
+- [ ] A user can create, edit, enable/disable and delete scheduled tasks for their own project, with a 5-field cron expression and a command that runs inside the project's container
+- [ ] Tasks run on schedule in the configured server timezone (F5.13) and survive an API restart and a project redeploy
+- [ ] "Run now" executes a task immediately and the result appears in its run history
+- [ ] Each run records status, exit code, duration and capped output; only the latest 50 runs per task are kept
+- [ ] Runs are bounded by a timeout, never overlap for the same task, and are SKIPPED (not failed) when the project is not running
+- [ ] Commands execute through the Python system layer with an argument list, never through a host shell, and only in the owning project's container
+- [ ] Authorization: users see and manage only their own tasks, resellers their sub-accounts', admins all; unauthenticated calls return 401 and other users' tasks return 403/404
+- [ ] `maxScheduledTasks` quota enforced and shown like the other quotas, with F5.23 warnings at 80% and 100%
+- [ ] Failure email after 3 consecutive failures, sent once per failure streak, with a per-task opt-out
+- [ ] Create, update, delete and run-now are written to the audit log
+- [ ] Cron expressions faster than once a minute, invalid expressions and over-long commands are rejected with clear errors
+
+**Test Plan:**
+1. Create a task `echo hello` every minute on a running project → after a minute a run appears with status SUCCESS and output `hello`
+2. Create a task that sleeps longer than its timeout → run recorded as TIMEOUT and the process is gone from the container
+3. Create a task that exits non-zero three times in a row → exactly one failure email; succeed once, then fail three times again → a second email
+4. Stop the project → the next run is SKIPPED; start it again → runs resume without editing the task
+5. Redeploy the project (new container) → the task still runs in the new container
+6. Restart the API → schedules are restored; change the server timezone → next-run times shift accordingly
+7. As another user, call the endpoints for the first user's project → 403/404; signed out → 401
+8. Submit `* * * * * *` (seconds) and a 5,000-character command → both rejected
+9. Hit the `maxScheduledTasks` quota → creation refused with `QUOTA_EXCEEDED`
+
+**Developer Docs:**
+- **Location:** `docs/dev/scheduled-tasks.md`
+- **Contents:** data model, how scheduling and execution work (BullMQ to Python `exec`), guards and limits, how the timezone is applied, how to add a preset, how to test
+
+**Files to Create:**
+- `apps/api/src/modules/scheduled-tasks/{routes,service,schema,scheduler}.ts`
+- `packages/shared/src/schemas/scheduledTasks.ts`
+- `apps/api/prisma/migrations/<timestamp>_add_scheduled_tasks/migration.sql`
+- `apps/dashboard/src/components/projects/ScheduledTasksPanel.tsx` and `src/hooks/useScheduledTasks.ts`
 
 ---
 
