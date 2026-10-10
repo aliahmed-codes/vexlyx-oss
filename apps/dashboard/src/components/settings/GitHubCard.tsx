@@ -51,19 +51,19 @@ export function GitHubCard() {
       <CardContent className="space-y-4">
         {isLoading ? <Loader2 className="h-4 w-4 animate-spin" /> : (
           <>
-            {isAdmin && (
+            {isAdmin && !status?.configured && (
               <div className="rounded-lg border p-4">
                 <div className="flex flex-wrap items-center justify-between gap-3">
                   <div>
                     <div className="flex items-center gap-2">
                       <p className="text-sm font-medium">Panel GitHub App</p>
-                      <Badge variant={status?.configured ? "default" : "secondary"}>{status?.configured ? "Configured" : "Not configured"}</Badge>
+                      <Badge variant="secondary">Setup required</Badge>
                     </div>
-                    {status?.configured && <p className="mt-1 text-xs text-muted-foreground">{status.slug} · App ID {status.appId}</p>}
+                    <p className="mt-1 text-xs text-muted-foreground">Configure the panel once. Users will then connect GitHub directly.</p>
                   </div>
                   <div className="flex gap-2">
                     <Button size="sm" onClick={() => void handleManifest()} disabled={!status?.publicUrlReady}>
-                      {status?.configured ? "Replace App" : "Create GitHub App"}
+                      Set up GitHub
                     </Button>
                     <Button size="sm" variant="outline" onClick={() => setManualOpen(true)}>Use existing App</Button>
                   </div>
@@ -76,10 +76,16 @@ export function GitHubCard() {
               </div>
             )}
 
+            {!isAdmin && !status?.configured && (
+              <div className="flex gap-2 rounded-lg border p-4 text-sm text-muted-foreground">
+                <TriangleAlert className="h-4 w-4 shrink-0" />An administrator must finish GitHub setup before accounts can be connected.
+              </div>
+            )}
+
             <div className="space-y-3">
               <div className="flex items-center justify-between">
-                <div><p className="text-sm font-medium">Connected accounts</p><p className="text-xs text-muted-foreground">Only you can use these installations.</p></div>
-                <Button size="sm" variant="outline" onClick={() => void beginGitHubInstallation()} disabled={!status?.configured}>
+                <div><p className="text-sm font-medium">Connected accounts</p><p className="text-xs text-muted-foreground">Connect once, choose repositories on GitHub, and deploy without entering credentials.</p></div>
+                <Button size="sm" onClick={() => void beginGitHubInstallation()} disabled={!status?.configured}>
                   <Plus className="mr-1.5 h-3.5 w-3.5" />Connect GitHub
                 </Button>
               </div>

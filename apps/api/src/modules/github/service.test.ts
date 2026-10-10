@@ -14,9 +14,11 @@ describe("GitHubService.createManifest", () => {
     const redis = { set: vi.fn().mockResolvedValue("OK") };
     const service = new GitHubService({} as never, redis as never, {} as never);
 
-    const { manifest } = await service.createManifest("user-1", "session-1");
+    const { url, manifest } = await service.createManifest("user-1", "session-1");
 
     expect(manifest).toHaveProperty("request_oauth_on_install", true);
     expect(manifest).not.toHaveProperty("request_oauth_on_installation");
+    expect(manifest.redirect_url).toBe("https://api.vexlyx.example/api/github/app/manifest/callback");
+    expect(new URL(url).searchParams.get("state")).toMatch(/^[a-f0-9]{64}$/);
   });
 });
