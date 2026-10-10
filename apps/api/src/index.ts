@@ -40,6 +40,7 @@ import { userRoutes } from "./modules/users/routes.js";
 import { auditLogRoutes } from "./modules/audit-log/routes.js";
 import { systemRoutes } from "./modules/system/routes.js";
 import { systemEmailRoutes } from "./modules/system-email/routes.js";
+import { githubRoutes } from "./modules/github/routes.js";
 import { checkBackupScriptHealth } from "./modules/backups/service.js";
 
 
@@ -113,6 +114,7 @@ async function buildApp() {
   await app.register(auditLogRoutes, { prefix: "/api/audit-log" });
   await app.register(systemRoutes, { prefix: "/api/system" });
   await app.register(systemEmailRoutes, { prefix: "/api/system-email" });
+  await app.register(githubRoutes, { prefix: "/api/github" });
 
   return app;
 }

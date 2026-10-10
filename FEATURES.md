@@ -2407,7 +2407,7 @@ Users cannot schedule recurring work for their projects. A Laravel app needs `ph
 ---
 
 ### F5.29 — GitHub Integration (Connect Your GitHub Account, Pick a Repo, Auto-Deploy)
-**Status:** 🔴 NOT STARTED
+**Status:** 🟢 COMPLETED
 
 **Description:**
 Connecting a repository today is manual and per project (F1.3, F2.7): the user pastes a Git URL, copies a generated SSH deploy key into the repository's settings on GitHub, then copies the webhook URL and secret into GitHub as well, and repeats all of it for every project. There is no way to sign in to GitHub from Vexlyx, so users cannot browse their repositories, private repositories need a deploy key each, and a mistyped URL is only discovered when the clone fails. This feature adds a first-class GitHub connection: the operator creates a GitHub App for the install once (one click), each user installs it on their GitHub account or organization, and from then on projects are created by **picking a repository and branch from a list**. Cloning uses short-lived tokens, and push-to-deploy webhooks are delivered by the App with nothing to copy by hand. The existing manual Git URL flow stays as the fallback for GitLab, Bitbucket, Gitea and self-hosted Git servers.
@@ -2441,18 +2441,18 @@ Connecting a repository today is manual and per project (F1.3, F2.7): the user p
 - Operators without a public HTTPS URL cannot receive webhooks: detect this up front and say so instead of failing silently.
 
 **Acceptance Criteria:**
-- [ ] An admin can create the GitHub App for the install from Settings with one click (manifest flow), or enter an existing App's credentials; its private key, client secret and webhook secret are stored encrypted and never returned by the API
-- [ ] A user can connect their own GitHub account or organization to the panel and disconnect it again; other users cannot see or use that installation
-- [ ] Creating or editing a project offers a searchable list of the repositories the installation can access, with a branch selector, and connecting performs the first clone with no SSH key or URL typing
-- [ ] Private repositories work without a per-repository deploy key
-- [ ] Cloning, pulling and building use short-lived installation tokens fetched on demand; no GitHub token is persisted in the database or on disk, and the stored remote URL contains no credentials
-- [ ] Pushing to the connected branch triggers a deployment through the App webhook with no manual webhook setup; pushes to other branches are ignored, and a repeated delivery id is processed once
-- [ ] Webhook requests with a missing or invalid signature are rejected with 401
-- [ ] Uninstalling the App, removing a repository from it, or suspending it disconnects the affected projects cleanly without stopping their running containers, and the dashboard says why
-- [ ] Projects connected the manual way (Git URL, SSH key, per-project webhook) keep working unchanged
-- [ ] Forged or mismatched installation ids in the setup redirect are rejected
-- [ ] Linking, unlinking, App creation and repository connection are written to the audit log
-- [ ] Unauthenticated calls return 401 and calls for another user's installation or repository return 403/404
+- [x] An admin can create the GitHub App for the install from Settings with one click (manifest flow), or enter an existing App's credentials; its private key, client secret and webhook secret are stored encrypted and never returned by the API
+- [x] A user can connect their own GitHub account or organization to the panel and disconnect it again; other users cannot see or use that installation
+- [x] Creating or editing a project offers a searchable list of the repositories the installation can access, with a branch selector, and connecting performs the first clone with no SSH key or URL typing
+- [x] Private repositories work without a per-repository deploy key
+- [x] Cloning, pulling and building use short-lived installation tokens fetched on demand; no GitHub token is persisted in the database or on disk, and the stored remote URL contains no credentials
+- [x] Pushing to the connected branch triggers a deployment through the App webhook with no manual webhook setup; pushes to other branches are ignored, and a repeated delivery id is processed once
+- [x] Webhook requests with a missing or invalid signature are rejected with 401
+- [x] Uninstalling the App, removing a repository from it, or suspending it disconnects the affected projects cleanly without stopping their running containers, and the dashboard says why
+- [x] Projects connected the manual way (Git URL, SSH key, per-project webhook) keep working unchanged
+- [x] Forged or mismatched installation ids in the setup redirect are rejected
+- [x] Linking, unlinking, App creation and repository connection are written to the audit log
+- [x] Unauthenticated calls return 401 and calls for another user's installation or repository return 403/404
 
 **Test Plan:**
 1. As admin, click "Create GitHub App" on a server with a public HTTPS panel URL → GitHub shows the pre-filled manifest, and after confirming, Settings shows the App as connected
