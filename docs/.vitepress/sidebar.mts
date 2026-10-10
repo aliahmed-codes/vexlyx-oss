@@ -50,6 +50,7 @@ const groups: Group[] = [
       "reference/projects-ui",
       "reference/project-detail-page",
       "reference/git-integration",
+      "reference/github-integration",
       "reference/github-webhooks",
       "reference/build-system",
       "reference/deployment-engine",
