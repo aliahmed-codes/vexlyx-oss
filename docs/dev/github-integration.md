@@ -1,10 +1,12 @@
 # GitHub Integration
 
-Vexlyx uses one GitHub App per panel installation. Administrators create the App through GitHub's manifest flow or enter an existing App's credentials. Users then install that App on a personal account or organization and select repositories from the dashboard.
+Vexlyx uses one GitHub App per panel installation. An administrator completes the one-time App setup through GitHub's manifest flow or enters an existing App's credentials. After that setup, the creation controls are hidden and every user gets a direct **Connect GitHub** action, installs the panel App on a personal account or organization, and chooses repositories on GitHub.
 
 ## GitHub App configuration
 
 The API builds callback and webhook URLs from `API_BASE_URL` and refuses to start the manifest flow unless it is a public HTTPS URL. Request headers are never used to construct security-sensitive URLs.
+
+The manifest callback URL is submitted without query parameters. The single-use CSRF `state` is attached to the GitHub registration form action, and GitHub returns it alongside the manifest conversion code. This follows GitHub's manifest protocol and keeps the callback URL valid.
 
 The generated App requests repository Contents read access and Metadata read access. It subscribes to push events; GitHub also sends installation and installation-repository lifecycle events required to keep connections synchronized.
 

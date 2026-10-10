@@ -83,11 +83,11 @@ export class GitHubService {
     const manifestCallbackUrl = `${env.API_BASE_URL}/api/github/app/manifest/callback`;
     const panelHost = new URL(env.API_BASE_URL).hostname;
     return {
-      url: "https://github.com/settings/apps/new",
+      url: `https://github.com/settings/apps/new?state=${encodeURIComponent(state)}`,
       manifest: {
         name: `Vexlyx (${panelHost})`,
         url: env.CORS_ORIGIN,
-        redirect_url: `${manifestCallbackUrl}?state=${encodeURIComponent(state)}`,
+        redirect_url: manifestCallbackUrl,
         callback_urls: [callbackUrl],
         public: true,
         request_oauth_on_install: true,
