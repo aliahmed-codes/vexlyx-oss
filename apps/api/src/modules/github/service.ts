@@ -90,7 +90,7 @@ export class GitHubService {
         redirect_url: `${manifestCallbackUrl}?state=${encodeURIComponent(state)}`,
         callback_urls: [callbackUrl],
         public: true,
-        request_oauth_on_installation: true,
+        request_oauth_on_install: true,
         hook_attributes: { url: `${env.API_BASE_URL}/api/webhooks/github-app`, active: true },
         default_permissions: { contents: "read", metadata: "read" },
         default_events: ["push"],
