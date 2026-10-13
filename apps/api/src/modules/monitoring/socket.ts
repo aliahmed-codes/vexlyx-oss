@@ -139,10 +139,28 @@ export function registerMonitoringSocketHandlers(
   io: SocketIOServer,
   service: MonitoringService,
   logger: FastifyBaseLogger,
+  isAdmin: (userId: string) => Promise<boolean>,
 ): void {
   io.on("connection", (socket) => {
-    // --- Subscribe to live metrics ---
+    // --- Subscribe to live metrics (ADMIN only — mirrors the REST routes) ---
     socket.on("subscribe:metrics", async () => {
+      // Fail closed: any lookup error or missing identity denies the join.
+      const userId = socket.data.userId as string | undefined;
+      let allowed = false;
+      try {
+        allowed = userId ? await isAdmin(userId) : false;
+      } catch (err) {
+        logger.error({ socketId: socket.id, err }, "Metrics subscribe role check failed");
+      }
+      if (!allowed) {
+        socket.emit("metrics:forbidden", {
+          error: "You do not have permission to perform this action",
+          code: "FORBIDDEN_ROLE",
+          details: {},
+        });
+        return;
+      }
+
       await socket.join("metrics");
 
       // Send an immediate snapshot on join so the client doesn't wait 5s

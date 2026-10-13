@@ -31,8 +31,16 @@ export async function monitoringRoutes(app: FastifyInstance) {
   const service = new MonitoringService(app.prisma, app.log);
   const io = getIO();
 
-  // Register Socket.io handlers for subscribe/unsubscribe:metrics events
-  registerMonitoringSocketHandlers(io, service, app.log);
+  // Register Socket.io handlers for subscribe/unsubscribe:metrics events.
+  // Role is read from the DB per subscribe (like requireRole) so a demoted
+  // account cannot rejoin the metrics room on a stale session.
+  registerMonitoringSocketHandlers(io, service, app.log, async (userId) => {
+    const user = await app.prisma.user.findUnique({
+      where: { id: userId },
+      select: { role: true },
+    });
+    return user?.role === "ADMIN";
+  });
 
   // ---------------------------------------------------------------------------
   // BullMQ repeatable job — collect + persist server metrics every 60 seconds
@@ -66,7 +74,7 @@ export async function monitoringRoutes(app: FastifyInstance) {
 
   app.get(
     "/server",
-    { preHandler: [app.requireAuth] },
+    { preHandler: [app.requireRole("ADMIN")] },
     async (_request, reply) => {
       try {
         const metrics = await service.getServerMetrics();
@@ -83,7 +91,7 @@ export async function monitoringRoutes(app: FastifyInstance) {
 
   app.get(
     "/containers",
-    { preHandler: [app.requireAuth] },
+    { preHandler: [app.requireRole("ADMIN")] },
     async (_request, reply) => {
       try {
         const containers = await service.getContainerMetrics();
@@ -100,7 +108,7 @@ export async function monitoringRoutes(app: FastifyInstance) {
 
   app.get(
     "/history",
-    { preHandler: [app.requireAuth] },
+    { preHandler: [app.requireRole("ADMIN")] },
     async (request, reply) => {
       try {
         const query = MetricsQuerySchema.parse(request.query);

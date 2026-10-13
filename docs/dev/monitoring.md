@@ -74,9 +74,22 @@ pip install psutil
 
 | Method | Path | Auth | Description |
 |--------|------|------|-------------|
-| `GET` | `/api/monitoring/server` | ✅ | Live server metrics snapshot |
-| `GET` | `/api/monitoring/containers` | ✅ | Live per-container metrics |
-| `GET` | `/api/monitoring/history?range=24h` | ✅ | Historical snapshots (`1h` / `24h` / `7d` / `30d`) |
+| `GET` | `/api/monitoring/server` | ADMIN | Live server metrics snapshot |
+| `GET` | `/api/monitoring/containers` | ADMIN | Live per-container metrics |
+| `GET` | `/api/monitoring/history?range=24h` | ADMIN | Historical snapshots (`1h` / `24h` / `7d` / `30d`) |
+
+### Access control (admin-only)
+
+These metrics are **host-wide**: CPU/RAM/disk of the machine and every container on it, including other tenants' containers. They are therefore restricted to `ADMIN` (`app.requireRole("ADMIN")`): unauthenticated callers get `401 UNAUTHORIZED`, `USER`/`RESELLER` get `403 FORBIDDEN_ROLE`. The policy is enforced on **every** surface that exposes the data, otherwise it would be bypassable:
+
+| Surface | Enforcement |
+|---------|-------------|
+| `/api/monitoring/*` REST routes | `requireRole("ADMIN")` |
+| Socket.io `subscribe:metrics` | Role looked up in the DB on every subscribe; non-admins are not joined to the `metrics` room and receive `metrics:forbidden`. Lookup errors or a missing identity deny (fail closed). |
+| `GET /api/dashboard/summary` → `serverMetrics` | `null` for non-admins; metrics are not even collected for them |
+| Dashboard UI | "Monitoring" sidebar item and the home-page Server Health widget are shown to `ADMIN` only |
+
+A per-user "your usage" view for customers is intentionally not part of this change; if added, scope it to the caller's own projects rather than relaxing these routes.
 
 ---
 
@@ -84,7 +97,8 @@ pip install psutil
 
 | Direction | Event | Payload |
 |-----------|-------|---------|
-| Client → Server | `subscribe:metrics` | — |
+| Client → Server | `subscribe:metrics` | — (ADMIN only) |
+| Server → Client | `metrics:forbidden` | `{ error, code: "FORBIDDEN_ROLE", details }` — sent instead of joining the room when the caller is not an admin |
 | Server → Client | `metrics:server` | `ServerMetrics` |
 | Server → Client | `metrics:containers` | `ContainerMetric[]` |
 | Server → Client | `alert:threshold` | `AlertThreshold` |
@@ -152,6 +166,9 @@ To change defaults, edit `DEFAULT_THRESHOLDS` in `apps/api/src/modules/monitorin
 4. Check the container table populates if Docker containers are running
 5. Wait ~60 seconds → check the 1h chart starts showing data points
 6. Simulate a CPU spike: open Task Manager / `stress-ng` on the server → watch toast appear
+7. Log in as a `USER`/`RESELLER` → no Monitoring sidebar item or Server Health widget; a request with that session to `/api/monitoring/server` returns `403 FORBIDDEN_ROLE`
+
+Automated: `pnpm --filter @vexlyx/api test` runs `routes.test.ts` (401 / 403 for USER and RESELLER / 200 for ADMIN on all three endpoints, asserting the service is never called when denied) and `socket.test.ts` (admin joins; non-admin, lookup failure and missing identity are all denied).
 
 ---
 
