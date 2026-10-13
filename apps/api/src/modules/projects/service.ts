@@ -216,7 +216,7 @@ export class ProjectService {
 
   async update(userId: string, projectId: string, data: UpdateProjectInput) {
     // Verify ownership first
-    await this.getById(userId, projectId);
+    const project = await this.getById(userId, projectId);
 
     // If name is changing, check it won't collide with another project
     if (data.name) {
@@ -248,6 +248,13 @@ export class ProjectService {
         data: {
           ...(data.name !== undefined && { name: data.name }),
           ...(data.gitUrl !== undefined && { gitUrl: data.gitUrl || null }),
+          ...(data.gitUrl !== undefined && (data.gitUrl || null) !== project.gitUrl && {
+            githubInstallationId: null,
+            githubRepoId: null,
+            githubRepoFullName: null,
+            githubConnectionStatus: null,
+            githubDisconnectReason: null,
+          }),
           ...(data.branch !== undefined && { branch: data.branch }),
           ...(data.buildCmd !== undefined && { buildCmd: data.buildCmd }),
           ...(data.startCmd !== undefined && { startCmd: data.startCmd }),
