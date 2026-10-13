@@ -140,6 +140,21 @@ submission inet n       -       n       -       -       smtpd
   -o milter_macro_daemon_name=ORIGINATING
 ```
 
+### Lookup map rebuilds (`virtual_mailbox_maps`, `virtual_alias_maps`) — failures are reported (#51)
+
+Postfix reads the compiled `.lmdb` files, not the plain-text sources, so every mailbox/alias change must be recompiled with `postmap`. A failed rebuild leaves the previous map in place (recipients rejected with 550, mail routed to old destinations), so it is never swallowed:
+
+| Where | Behaviour on a failed rebuild |
+|-------|-------------------------------|
+| `postfix_manager.py` `_compile_lmdb_map()` | Checks the exit status (the script saves the `postmap`/`mv`/`chmod` chain's status before the cleanup `rm`, which would otherwise always report success), and raises `PostfixMapError` with the map name and the command's stderr. Timeouts and a missing `docker` binary are errors too. |
+| `sync_virtual_domains` / `sync_virtual_aliases` | The error propagates, **no reload is attempted**, and the script prints `{ "error", "code": "POSTFIX_MAP_COMPILE_FAILED" }` with exit 1. |
+| `MailService.syncVirtualDomains` / `syncVirtualAliases` | Reject with `MailError` `POSTFIX_MAP_COMPILE_FAILED` (502) instead of treating the error payload as a result. |
+| `POST /api/mail/sync` | Returns that error. |
+| Mailbox creation | The mailbox row exists, so it fails with `MAIL_SYNC_FAILED` (502): "created, but the mail server could not be updated … use Mail → Sync to retry". |
+| Container `entrypoint.sh` `compile_map` | A missing source file is still the quiet first-boot case. A real compile failure logs `ERROR: failed to compile <map>` and a startup warning instead of vanishing behind `|| true`; it does not abort startup. A failed `chmod` on the `.lmdb` is logged too. |
+
+Tests: `tests/test_postfix_map_rebuild.py`, `apps/api/src/modules/mail/sync.test.ts`, `apps/api/src/modules/mailboxes/service.test.ts`.
+
 ---
 
 ## 4. OpenDKIM & DNS TXT Auto-Configuration

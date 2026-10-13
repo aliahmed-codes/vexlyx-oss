@@ -121,7 +121,19 @@ export class MailboxService {
     });
     void notifyQuotaThreshold(this.prisma, userId, "mailbox");
 
-    await this.mailService.syncVirtualDomains(userId);
+    try {
+      await this.mailService.syncVirtualDomains(userId);
+    } catch (err) {
+      // The mailbox row exists, but Postfix/Dovecot did not pick it up (e.g. the
+      // postmap rebuild failed), so mail for it is not routable yet. Say so
+      // rather than reporting a clean success; "Sync" on the Mail page retries.
+      const reason = err instanceof Error ? err.message : String(err);
+      throw new MailboxError(
+        `The mailbox was created, but the mail server could not be updated: ${reason} Use Mail → Sync to retry.`,
+        "MAIL_SYNC_FAILED",
+        502,
+      );
+    }
 
     if (isFirstMailbox) {
       // Auto-configure SPF/DKIM/DMARC/MX (F4.5). Never blocks mailbox
