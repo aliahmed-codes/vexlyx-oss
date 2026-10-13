@@ -28,12 +28,13 @@ export function unregisterSystemEmail(instance: SystemEmailService): void {
 }
 
 function logNotificationFailure(
+  dispatchLogger: Pick<FastifyBaseLogger, "error">,
   error: unknown,
   event: SystemEmailEvent,
   target: "admins" | "user",
   recipient?: string,
 ): void {
-  logger?.error(
+  dispatchLogger.error(
     {
       err: error,
       event,
@@ -49,8 +50,12 @@ export function notifyUser<E extends SystemEmailEvent>(
   to: string,
   params: EmailParams[E],
 ): void {
-  void service?.notify(event, to, params).catch((error: unknown) => {
-    logNotificationFailure(error, event, "user", to);
+  const dispatchService = service;
+  const dispatchLogger = logger;
+  if (!dispatchService || !dispatchLogger) return;
+
+  void dispatchService.notify(event, to, params).catch((error: unknown) => {
+    logNotificationFailure(dispatchLogger, error, event, "user", to);
   });
 }
 
@@ -58,7 +63,11 @@ export function notifyAdmins<E extends SystemEmailEvent>(
   event: E,
   params: EmailParams[E],
 ): void {
-  void service?.notifyAdmins(event, params).catch((error: unknown) => {
-    logNotificationFailure(error, event, "admins");
+  const dispatchService = service;
+  const dispatchLogger = logger;
+  if (!dispatchService || !dispatchLogger) return;
+
+  void dispatchService.notifyAdmins(event, params).catch((error: unknown) => {
+    logNotificationFailure(dispatchLogger, error, event, "admins");
   });
 }

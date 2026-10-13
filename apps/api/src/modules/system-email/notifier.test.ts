@@ -118,6 +118,31 @@ describe("system email notifier", () => {
     }
   });
 
+  it("logs a pending notification failure after the service is unregistered", async () => {
+    const { service, error } = registerTestService();
+    let rejectNotification!: (reason?: unknown) => void;
+    vi.mocked(service.notifyAdmins).mockReturnValue(
+      new Promise<void>((_resolve, reject) => {
+        rejectNotification = reject;
+      }),
+    );
+
+    notifyAdmins("backup_failed", {
+      error: "disk full",
+      snapshotId: "snapshot-1",
+    });
+    unregisterSystemEmail(service);
+
+    const failure = new Error("database connection closed");
+    rejectNotification(failure);
+
+    await vi.waitFor(() => expect(error).toHaveBeenCalledOnce());
+    expect(error).toHaveBeenCalledWith(
+      { err: failure, event: "backup_failed", target: "admins" },
+      "Failed to dispatch system email notification",
+    );
+  });
+
   it("is a safe no-op before service registration", async () => {
     notifyAdmins("backup_failed", {
       error: "disk full",
