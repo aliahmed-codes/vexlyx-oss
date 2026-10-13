@@ -119,6 +119,19 @@ mail                 3600     IN  A      192.0.2.2
 _sip._tcp            3600     IN  SRV   10 50 5060 sip.example.com
 ```
 
+### Zone write failures (#50)
+
+The zone file write is the point where a record change actually reaches CoreDNS, so a failure is never swallowed:
+
+| Situation | Behaviour |
+|-----------|-----------|
+| A record mutation (create / update / delete / import / defaults, DKIM, restore) cannot write the zone file | The request fails with `500 DNS_ZONE_WRITE_FAILED`. The message states that the change **was saved** but is not being served yet, with the OS error code (e.g. `EACCES`, `ENOSPC`). Saving again retries the write. The error is logged with the hostname and the zone file path. |
+| Boot-time re-sync (`syncAllManagedZones`) | One failing zone does not stop the others; each failure is logged and a single `DNS_ZONE_WRITE_FAILED` summary is reported in the boot log. |
+| Zone file removal on domain delete | Still non-fatal (the domain is already gone) but logs a warning instead of staying silent. |
+| API startup | `checkDnsZonesDirWritable()` logs an error if the zones directory is missing or not writable, so the misconfiguration is visible once at boot. |
+
+Previously all of these were silent, so users saw "saved" while CoreDNS kept serving the old zone. Tests: `apps/api/src/modules/domains/zone-sync.test.ts`.
+
 ---
 
 ## 5. API Reference

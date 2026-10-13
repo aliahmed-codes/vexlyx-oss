@@ -2,6 +2,7 @@ import fs from "node:fs";
 import path from "node:path";
 import dns from "node:dns/promises";
 import type { PrismaClient, Domain } from "@prisma/client";
+import type { FastifyBaseLogger } from "fastify";
 import {
   generateZoneFile,
   parseZoneFile,
@@ -47,8 +48,29 @@ function getCoreDnsZonesDir(): string {
   return fallback;
 }
 
+/**
+ * Boot-time check that the CoreDNS zones directory exists and is writable, so
+ * a misconfiguration is reported once at startup instead of on every record
+ * mutation.
+ */
+export function checkDnsZonesDirWritable():
+  | { ok: true; path: string }
+  | { ok: false; path: string; error: string } {
+  const zonesDir = getCoreDnsZonesDir();
+  try {
+    fs.accessSync(zonesDir, fs.constants.W_OK);
+    return { ok: true, path: zonesDir };
+  } catch (err) {
+    const reason = err instanceof Error ? err.message : String(err);
+    return { ok: false, path: zonesDir, error: reason };
+  }
+}
+
 export class DnsService {
-  constructor(private readonly prisma: PrismaClient) {}
+  constructor(
+    private readonly prisma: PrismaClient,
+    private readonly logger?: Pick<FastifyBaseLogger, "error" | "warn">,
+  ) {}
 
   /**
    * Helper to verify domain ownership.
@@ -670,13 +692,17 @@ export class DnsService {
     const cleanHost = hostname.startsWith("*.") ? hostname.slice(2) : hostname;
     try {
       fs.rmSync(path.join(getCoreDnsZonesDir(), `${cleanHost}.db`), { force: true });
-    } catch {
-      // Non-fatal if filesystem is temporarily restricted
+    } catch (err) {
+      // Non-fatal for the delete itself (the domain is already gone), but a
+      // stale zone keeps being served, so it must not be silent.
+      this.logger?.warn({ err, hostname: cleanHost }, "Failed to remove DNS zone file");
     }
   }
 
   /**
    * Regenerates the zone file of every MANAGED domain from the database.
+   * A failing zone does not stop the others from being written; if any failed,
+   * a single error summarising them is thrown once the rest are done.
    * @returns how many zones were written
    */
   async syncAllManagedZones(): Promise<number> {
@@ -684,8 +710,23 @@ export class DnsService {
       where: { dnsMode: "MANAGED" },
       select: { id: true, hostname: true },
     });
+
+    const failed: string[] = [];
     for (const domain of domains) {
-      await this.syncZoneFile(domain.hostname, domain.id);
+      try {
+        await this.syncZoneFile(domain.hostname, domain.id);
+      } catch (err) {
+        failed.push(domain.hostname);
+        this.logger?.error({ err, hostname: domain.hostname }, "Failed to sync hosted DNS zone");
+      }
+    }
+
+    if (failed.length > 0) {
+      throw new DomainError(
+        `${failed.length} of ${domains.length} hosted DNS zone(s) could not be written: ${failed.join(", ")}`,
+        "DNS_ZONE_WRITE_FAILED",
+        500,
+      );
     }
     return domains.length;
   }
@@ -693,28 +734,43 @@ export class DnsService {
   /**
    * Write RFC 1035 zone file to CoreDNS zones directory. No-op unless the
    * domain is MANAGED, so connect-only domains never get a zone we don't serve.
+   *
+   * @throws DomainError `DNS_ZONE_WRITE_FAILED` when the zone file cannot be
+   *   written (the database change has already been committed by then).
    */
   async syncZoneFile(hostname: string, domainId: string): Promise<void> {
+    const domain = await this.prisma.domain.findUnique({
+      where: { id: domainId },
+      select: { dnsMode: true },
+    });
+    if (domain?.dnsMode !== "MANAGED") return;
+
+    const records = await this.prisma.dnsRecord.findMany({
+      where: { domainId },
+      orderBy: [{ type: "asc" }, { name: "asc" }],
+    });
+
+    const cleanHost = hostname.startsWith("*.") ? hostname.slice(2) : hostname;
+    const zoneContent = generateZoneFile(cleanHost, records);
+    const zonesDir = getCoreDnsZonesDir();
+    const zoneFilePath = path.join(zonesDir, `${cleanHost}.db`);
+
     try {
-      const domain = await this.prisma.domain.findUnique({
-        where: { id: domainId },
-        select: { dnsMode: true },
-      });
-      if (domain?.dnsMode !== "MANAGED") return;
-
-      const records = await this.prisma.dnsRecord.findMany({
-        where: { domainId },
-        orderBy: [{ type: "asc" }, { name: "asc" }],
-      });
-
-      const cleanHost = hostname.startsWith("*.") ? hostname.slice(2) : hostname;
-      const zoneContent = generateZoneFile(cleanHost, records);
-      const zonesDir = getCoreDnsZonesDir();
-      const zoneFilePath = path.join(zonesDir, `${cleanHost}.db`);
-
       fs.writeFileSync(zoneFilePath, zoneContent, "utf-8");
-    } catch {
-      // Non-fatal if filesystem is temporarily restricted
+    } catch (err) {
+      // The write is the enforcement point: if it fails CoreDNS keeps serving
+      // the previous zone while the API would otherwise report the change as
+      // saved. Make that visible instead of swallowing it.
+      this.logger?.error(
+        { err, hostname: cleanHost, zoneFilePath },
+        "Failed to write DNS zone file",
+      );
+      const reason = (err as NodeJS.ErrnoException).code ?? "unknown filesystem error";
+      throw new DomainError(
+        `The change was saved, but the DNS zone file for ${cleanHost} could not be written (${reason}), so it is not being served yet. Check the DNS zones directory permissions and free disk space, then save again to retry.`,
+        "DNS_ZONE_WRITE_FAILED",
+        500,
+      );
     }
   }
 }
