@@ -96,6 +96,24 @@ F1.7 introduces project-scoped environment variables management in Vexlyx.
 
 ---
 
+## Undecryptable Variables (`ENV_DECRYPT_FAILED`, #49)
+
+If `ENCRYPTION_KEY` (or `SESSION_SECRET`, when no key is set) changes, or a stored value is corrupted, a variable can no longer be decrypted. The pipeline **fails loudly instead of substituting an empty string**, because a container booted with an empty password or API key fails confusingly at runtime (or connects with an empty credential):
+
+| Surface | Behaviour |
+|---------|-----------|
+| `EnvService.getDecryptedMap()` | Throws `EnvError` `ENV_DECRYPT_FAILED` (HTTP 500) naming **every** affected key |
+| `POST /api/projects/:id/deploy` | Responds `500 ENV_DECRYPT_FAILED` with the message; the project is left in its previous status (the env map is decrypted before the status flips to `CREATING`) |
+| Build job | Deployment is marked `FAILED` and the build log contains `[vexlyx:error] Could not decrypt environment variable "KEY"…` |
+| `GET …/env/:key/reveal` | `500 ENV_DECRYPT_FAILED` for that key |
+| `GET …/env` (list) | Unaffected — values stay masked and are never decrypted |
+
+**Recovery:** restore the previous `ENCRYPTION_KEY`, or re-enter the named variables (saving re-encrypts them with the current key). Tests: `apps/api/src/modules/env/service.test.ts` and `apps/api/src/modules/deploy/service.test.ts`.
+
+**Not done here:** a dedicated "re-enter this value" prompt in the dashboard UI — the error message names the key and the API returns a stable `code` the UI can key off.
+
+---
+
 ## How to Test
 
 ### 1. Add Environment Variable
