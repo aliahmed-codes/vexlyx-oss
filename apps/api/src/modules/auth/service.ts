@@ -1,4 +1,5 @@
 import type { PrismaClient } from "@prisma/client";
+import { randomBytes } from "node:crypto";
 import * as argon2 from "argon2";
 import { notifyUser } from "../system-email/notifier.js";
 import type { RegisterInput, LoginInput, ChangePasswordInput } from "./schema.js";
@@ -18,6 +19,24 @@ const PUBLIC_USER_SELECT = {
   totpEnabled: true,
   createdAt: true,
 } as const;
+
+// Security: an unknown email must cost as much as a wrong password, otherwise
+// response time reveals which emails are registered. The decoy is hashed with
+// the same options as real passwords (register/changePassword use the argon2
+// defaults with argon2id) so verify() does equivalent work. Its plaintext is
+// random and discarded, so no login can ever match it. Memoised so the hash is
+// computed once per process rather than on every failed login.
+let decoyHash: Promise<string> | null = null;
+
+function getDecoyHash(): Promise<string> {
+  decoyHash ??= argon2
+    .hash(randomBytes(32).toString("hex"), { type: argon2.argon2id })
+    .catch((err: unknown) => {
+      decoyHash = null;
+      throw err;
+    });
+  return decoyHash;
+}
 
 export class AuthService {
   constructor(private prisma: PrismaClient) {}
@@ -58,6 +77,7 @@ export class AuthService {
     });
 
     if (!user) {
+      await argon2.verify(await getDecoyHash(), data.password);
       throw new AuthError("Invalid email or password", "INVALID_CREDENTIALS", 401);
     }
 
