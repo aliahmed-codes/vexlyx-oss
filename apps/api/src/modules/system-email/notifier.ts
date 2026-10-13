@@ -1,4 +1,5 @@
 import type { SystemEmailEvent } from "@vexlyx/shared";
+import type { FastifyBaseLogger } from "fastify";
 import type { SystemEmailService } from "./service.js";
 import type { EmailParams } from "./templates.js";
 
@@ -10,15 +11,54 @@ import type { EmailParams } from "./templates.js";
 // ---------------------------------------------------------------------------
 
 let service: SystemEmailService | null = null;
+let logger: Pick<FastifyBaseLogger, "error"> | null = null;
 
-export function registerSystemEmail(instance: SystemEmailService): void {
+export function registerSystemEmail(
+  instance: SystemEmailService,
+  instanceLogger: FastifyBaseLogger,
+): void {
   service = instance;
+  logger = instanceLogger;
 }
 
-export function notifyUser<E extends SystemEmailEvent>(event: E, to: string, params: EmailParams[E]): void {
-  void service?.notify(event, to, params);
+export function unregisterSystemEmail(instance: SystemEmailService): void {
+  if (service !== instance) return;
+  service = null;
+  logger = null;
 }
 
-export function notifyAdmins<E extends SystemEmailEvent>(event: E, params: EmailParams[E]): void {
-  void service?.notifyAdmins(event, params);
+function logNotificationFailure(
+  error: unknown,
+  event: SystemEmailEvent,
+  target: "admins" | "user",
+  recipient?: string,
+): void {
+  logger?.error(
+    {
+      err: error,
+      event,
+      target,
+      ...(recipient === undefined ? {} : { recipient }),
+    },
+    "Failed to dispatch system email notification",
+  );
+}
+
+export function notifyUser<E extends SystemEmailEvent>(
+  event: E,
+  to: string,
+  params: EmailParams[E],
+): void {
+  void service?.notify(event, to, params).catch((error: unknown) => {
+    logNotificationFailure(error, event, "user", to);
+  });
+}
+
+export function notifyAdmins<E extends SystemEmailEvent>(
+  event: E,
+  params: EmailParams[E],
+): void {
+  void service?.notifyAdmins(event, params).catch((error: unknown) => {
+    logNotificationFailure(error, event, "admins");
+  });
 }
