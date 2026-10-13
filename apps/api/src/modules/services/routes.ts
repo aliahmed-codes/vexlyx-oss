@@ -2,6 +2,7 @@ import type { FastifyInstance, FastifyReply } from "fastify";
 import { ServicesService, ServicesError } from "./service.js";
 import { ServiceNameParamSchema, ServiceLogsQuerySchema } from "./schema.js";
 import { registerServicesSocketHandlers } from "./socket.js";
+import { createSocketAuthorizer } from "../../plugins/socket-auth.js";
 import { getIO } from "../../plugins/socket.js";
 
 // ---------------------------------------------------------------------------
@@ -20,7 +21,7 @@ export async function servicesRoutes(app: FastifyInstance) {
   const service = new ServicesService(app.log);
   const io = getIO();
 
-  registerServicesSocketHandlers(io, service, app.log);
+  registerServicesSocketHandlers(io, service, app.log, createSocketAuthorizer(app.prisma, app.log));
 
   // ---------------------------------------------------------------------------
   // GET /api/services — live status of all managed services + Docker daemon

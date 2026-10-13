@@ -1,6 +1,11 @@
 import type { Server as SocketIOServer } from "socket.io";
 import type { FastifyBaseLogger } from "fastify";
 import { ServicesService } from "./service.js";
+import {
+  authorizeSocketSubscription,
+  type SocketAccessRule,
+  type SocketAuthorizer,
+} from "../../plugins/socket-auth.js";
 
 // ---------------------------------------------------------------------------
 // Track active status push intervals keyed by socket ID
@@ -48,10 +53,26 @@ function stopStatusPush(socketId: string): void {
 // Register socket event handlers
 // ---------------------------------------------------------------------------
 
-export function registerServicesSocketHandlers(io: SocketIOServer, service: ServicesService, logger: FastifyBaseLogger): void {
+/** Same rule as `GET /api/services`: `requireRole("ADMIN")`. */
+export const SERVICES_ROOM_ACCESS: SocketAccessRule = { roles: ["ADMIN"] };
+
+export function registerServicesSocketHandlers(
+  io: SocketIOServer,
+  service: ServicesService,
+  logger: FastifyBaseLogger,
+  authorize: SocketAuthorizer,
+): void {
   io.on("connection", (socket) => {
-    // --- Subscribe to live service status ---
+    // --- Subscribe to live service status (ADMIN only, like the HTTP route) ---
     socket.on("subscribe:services", async () => {
+      const allowed = await authorizeSocketSubscription(
+        authorize,
+        socket,
+        SERVICES_ROOM_ACCESS,
+        "services:forbidden",
+      );
+      if (!allowed) return;
+
       await socket.join("services");
 
       // Send an immediate snapshot on join so the client doesn't wait 10s

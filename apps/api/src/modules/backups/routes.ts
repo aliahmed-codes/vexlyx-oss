@@ -3,6 +3,7 @@ import { BackupService, BackupError } from "./service.js";
 import { AuditLogService } from "../audit-log/service.js";
 import { RestoreItemSchema, UpdateBackupSettingsSchema, SnapshotIdParamSchema } from "./schema.js";
 import { registerBackupSocketHandlers } from "./socket.js";
+import { createSocketAuthorizer } from "../../plugins/socket-auth.js";
 import { getIO } from "../../plugins/socket.js";
 import { createQueue, createWorker } from "../../config/queue.js";
 import { SystemService } from "../system/service.js";
@@ -32,7 +33,7 @@ export async function backupRoutes(app: FastifyInstance) {
   const systemService = new SystemService(app.prisma);
   const io = getIO();
 
-  registerBackupSocketHandlers(io, app.log);
+  registerBackupSocketHandlers(io, app.log, createSocketAuthorizer(app.prisma, app.log));
 
   // ---------------------------------------------------------------------------
   // BullMQ — daily scheduled backup + on-demand manual trigger
