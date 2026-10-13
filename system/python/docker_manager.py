@@ -512,6 +512,26 @@ def cmd_stop(payload: dict) -> None:
         fail(f"Deploy directory not found: {compose_dir}", "NOT_DEPLOYED")
     log_line("[vexlyx] Stopping container…")
     run_compose(compose_dir, ["stop"], docker_bin)
+    # Verify every service, including sidecars, before a caller can overwrite files.
+    try:
+        containers = subprocess.run(
+            [docker_bin, "compose", "ps", "--all", "--quiet"],
+            cwd=compose_dir, capture_output=True, text=True, timeout=30,
+        )
+        if containers.returncode != 0:
+            fail("Could not list containers after stop", "CONTAINER_STOP_UNCONFIRMED")
+        container_ids = containers.stdout.split()
+        if container_ids:
+            states = subprocess.run(
+                [docker_bin, "inspect", "--type", "container", "--format", "{{.State.Status}}", *container_ids],
+                capture_output=True, text=True, timeout=30,
+            )
+            statuses = states.stdout.split()
+            if (states.returncode != 0 or len(statuses) != len(container_ids)
+                    or any(status not in ("exited", "created", "dead") for status in statuses)):
+                fail("Containers are not confirmed stopped", "CONTAINER_STOP_UNCONFIRMED")
+    except (OSError, subprocess.TimeoutExpired):
+        fail("Could not verify stopped containers", "CONTAINER_STOP_UNCONFIRMED")
     respond({"done": True})
 
 

@@ -527,7 +527,16 @@ export class BackupService {
     }
 
     if (project.containerId) {
-      await this.deployService.containerAction(project.userId, project.id, "stop").catch(() => undefined);
+      try {
+        await this.deployService.containerAction(project.userId, project.id, "stop");
+      } catch (err) {
+        this.logger.error({ err, projectId }, "Container stop failed before project restore");
+        throw new BackupError(
+          "Project restore aborted: containers could not be confirmed stopped. Resolve the container error and retry.",
+          "RESTORE_STOP_FAILED",
+          500,
+        );
+      }
     }
 
     await runBackupCommand(
