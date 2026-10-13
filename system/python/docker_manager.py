@@ -35,6 +35,7 @@ import re
 import shutil
 import subprocess
 import sys
+import threading
 from pathlib import Path
 
 
@@ -79,6 +80,60 @@ def require_field(payload: dict, field: str) -> str:
     return value  # type: ignore[return-value]
 
 
+# ---------------------------------------------------------------------------
+# Bounded subprocess execution (#52)
+#
+# Every external command is time-limited so a hung docker/nixpacks/mysqldump
+# cannot wedge a build or deploy forever (the API side only has a backstop
+# watchdog; killing this script would orphan the grandchild process, so the
+# limit has to be enforced here). Values are seconds.
+# ---------------------------------------------------------------------------
+
+QUICK_TIMEOUT = 30        # inspect / ps / network checks
+LOGS_TIMEOUT = 60         # one-shot `compose logs`
+DF_TIMEOUT = 120          # `docker system df`
+PRUNE_TIMEOUT = 600       # container / image prune
+COMPOSE_TIMEOUT = 1800    # `compose up/build/down` - image pulls can be slow
+
+def run_bounded(timeout: int, cmd: list, **kwargs) -> "subprocess.CompletedProcess":
+    """subprocess.run with a hard time limit; a timeout is reported, not hung on."""
+    try:
+        return subprocess.run(cmd, timeout=timeout, **kwargs)
+    except subprocess.TimeoutExpired:
+        fail(
+            f"`{' '.join(str(c) for c in cmd[:4])}` timed out after {timeout}s",
+            "COMMAND_TIMEOUT",
+        )
+        raise  # unreachable - fail() exits
+
+
+def stream_with_deadline(proc: "subprocess.Popen", timeout: int, on_line) -> bool:
+    """Feed proc.stdout lines to on_line; kill proc if it outlives `timeout`.
+
+    Returns True when the deadline killed the process.
+    """
+    timed_out = threading.Event()
+
+    def _kill() -> None:
+        timed_out.set()
+        try:
+            proc.kill()
+        except Exception:
+            pass
+
+    timer = threading.Timer(timeout, _kill)
+    timer.daemon = True
+    timer.start()
+    try:
+        if proc.stdout:
+            for raw_line in proc.stdout:
+                on_line(raw_line)
+        proc.wait()
+    finally:
+        timer.cancel()
+    return timed_out.is_set()
+
+
 def get_docker_binary() -> str:
     binary = shutil.which("docker")
     if binary:
@@ -92,7 +147,8 @@ def get_docker_binary() -> str:
 
 def ensure_traefik_network(docker_bin: str) -> None:
     """Ensure the external 'traefik-net' bridge network exists in Docker."""
-    res = subprocess.run(
+    res = run_bounded(
+        QUICK_TIMEOUT,
         [docker_bin, "network", "inspect", "traefik-net"],
         capture_output=True,
         text=True,
@@ -101,7 +157,8 @@ def ensure_traefik_network(docker_bin: str) -> None:
     )
     if res.returncode != 0:
         log_line("[vexlyx] Creating Docker network: traefik-net")
-        subprocess.run(
+        run_bounded(
+            QUICK_TIMEOUT,
             [docker_bin, "network", "create", "traefik-net"],
             capture_output=True,
             text=True,
@@ -125,7 +182,8 @@ def run_compose(
 
     cmd = [docker_bin, "compose"] + args
     if capture:
-        return subprocess.run(
+        return run_bounded(
+            COMPOSE_TIMEOUT,
             cmd,
             cwd=compose_dir,
             capture_output=True,
@@ -144,12 +202,16 @@ def run_compose(
         errors="replace",
         bufsize=1,
     )
-    if proc.stdout:
-        for line in proc.stdout:
-            stripped = line.rstrip("\r\n")
-            if stripped:
-                log_line(stripped)
-    proc.wait()
+    def _emit(line: str) -> None:
+        stripped = line.rstrip("\r\n")
+        if stripped:
+            log_line(stripped)
+
+    if stream_with_deadline(proc, COMPOSE_TIMEOUT, _emit):
+        fail(
+            f"`docker compose {' '.join(args)}` timed out after {COMPOSE_TIMEOUT}s",
+            "COMMAND_TIMEOUT",
+        )
     if proc.returncode != 0:
         fail(
             f"`docker compose {' '.join(args)}` failed with exit code {proc.returncode}",
@@ -331,7 +393,8 @@ def get_container_id(compose_dir: str, docker_bin: str, project_type: str = "NOD
     if not Path(compose_dir).is_dir() or not (Path(compose_dir) / "docker-compose.yml").is_file():
         return None
 
-    result = subprocess.run(
+    result = run_bounded(
+        QUICK_TIMEOUT,
         [docker_bin, "compose", "ps", "-q", primary_service_name(project_type, compose_dir)],
         cwd=compose_dir,
         capture_output=True,
@@ -629,7 +692,8 @@ def cmd_status(payload: dict) -> None:
         respond({"containerStatus": "not_found", "containerId": None})
         return
 
-    result = subprocess.run(
+    result = run_bounded(
+        QUICK_TIMEOUT,
         [docker_bin, "inspect", "--format", "{{.State.Status}}", container_id],
         capture_output=True,
         text=True,
@@ -651,7 +715,8 @@ def cmd_logs(payload: dict) -> None:
         respond({"logs": "No runtime logs available. Container has not been deployed yet."})
         return
 
-    result = subprocess.run(
+    result = run_bounded(
+        LOGS_TIMEOUT,
         [docker_bin, "compose", "logs", f"--tail={tail}", "--no-log-prefix", primary_service_name(project_type, compose_dir)],
         cwd=compose_dir,
         capture_output=True,
@@ -699,7 +764,8 @@ def cmd_system_df(payload: dict) -> None:
     Returns: { categories: [{ type, total, active, sizeBytes, reclaimableBytes }] }
     """
     docker_bin = get_docker_binary()
-    result = subprocess.run(
+    result = run_bounded(
+        DF_TIMEOUT,
         [docker_bin, "system", "df", "--format", "{{json .}}"],
         capture_output=True,
         text=True,
@@ -744,7 +810,8 @@ def cmd_cleanup(payload: dict) -> None:
     docker_bin = get_docker_binary()
 
     log_line("[vexlyx] Pruning stopped containers…")
-    container_result = subprocess.run(
+    container_result = run_bounded(
+        PRUNE_TIMEOUT,
         [docker_bin, "container", "prune", "-f"],
         capture_output=True,
         text=True,
@@ -759,7 +826,8 @@ def cmd_cleanup(payload: dict) -> None:
         return
 
     log_line("[vexlyx] Pruning unused images…")
-    image_result = subprocess.run(
+    image_result = run_bounded(
+        PRUNE_TIMEOUT,
         [docker_bin, "image", "prune", "-a", "-f"],
         capture_output=True,
         text=True,
@@ -795,7 +863,8 @@ def cmd_image_id(payload: dict) -> None:
     """Resolve the current image ID for a tag (F5.15). Returns { imageId } or { imageId: None }."""
     image_name = require_field(payload, "imageName")
     docker_bin = get_docker_binary()
-    result = subprocess.run(
+    result = run_bounded(
+        QUICK_TIMEOUT,
         [docker_bin, "image", "inspect", "--format", "{{.Id}}", image_name],
         capture_output=True,
         text=True,
@@ -818,7 +887,8 @@ def cmd_remove_image(payload: dict) -> None:
     """
     image_id = require_field(payload, "imageId")
     docker_bin = get_docker_binary()
-    result = subprocess.run(
+    result = run_bounded(
+        PRUNE_TIMEOUT,
         [docker_bin, "image", "rm", image_id],
         capture_output=True,
         text=True,

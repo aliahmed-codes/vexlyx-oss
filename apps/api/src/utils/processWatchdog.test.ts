@@ -1,0 +1,94 @@
+import { EventEmitter } from "node:events";
+import { readdirSync, readFileSync } from "node:fs";
+import { dirname, join, relative, resolve } from "node:path";
+import { fileURLToPath } from "node:url";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import type { ChildProcess } from "node:child_process";
+import { watchChildTimeout } from "./processWatchdog.js";
+
+function fakeChild() {
+  const child = new EventEmitter() as EventEmitter & { kill: ReturnType<typeof vi.fn> };
+  child.kill = vi.fn();
+  return child as unknown as ChildProcess & { kill: ReturnType<typeof vi.fn> };
+}
+
+describe("watchChildTimeout", () => {
+  beforeEach(() => vi.useFakeTimers());
+  afterEach(() => vi.useRealTimers());
+
+  it("reports the timeout and then SIGKILLs a child that is still running", () => {
+    const child = fakeChild();
+    const order: string[] = [];
+    child.kill.mockImplementation(() => order.push("kill"));
+
+    watchChildTimeout(child, 5_000, (ms) => order.push(`timeout:${ms}`));
+    vi.advanceTimersByTime(4_999);
+    expect(order).toEqual([]);
+
+    vi.advanceTimersByTime(1);
+    // The caller's promise must be settled with the timeout error before the
+    // kill triggers the (then no-op) close handler.
+    expect(order).toEqual(["timeout:5000", "kill"]);
+    expect(child.kill).toHaveBeenCalledWith("SIGKILL");
+  });
+
+  it("does nothing when the child closes before the deadline", () => {
+    const child = fakeChild();
+    const onTimeout = vi.fn();
+
+    watchChildTimeout(child, 5_000, onTimeout);
+    child.emit("close", 0);
+    vi.advanceTimersByTime(60_000);
+
+    expect(onTimeout).not.toHaveBeenCalled();
+    expect(child.kill).not.toHaveBeenCalled();
+  });
+
+  it("does nothing when the child fails to spawn", () => {
+    const child = fakeChild();
+    const onTimeout = vi.fn();
+
+    watchChildTimeout(child, 5_000, onTimeout);
+    child.emit("error", new Error("spawn python3 ENOENT"));
+    vi.advanceTimersByTime(60_000);
+
+    expect(onTimeout).not.toHaveBeenCalled();
+    expect(child.kill).not.toHaveBeenCalled();
+  });
+});
+
+// Regression guard for #52: a module that spawns a Python script directly
+// must also arm the watchdog. (logs/service.ts is the intentionally unbounded
+// `docker compose logs --follow` stream, ended by the client disconnecting.)
+describe("every direct Python spawn is guarded", () => {
+  const modulesDir = resolve(dirname(fileURLToPath(import.meta.url)), "..", "modules");
+  const STREAMING_EXCEPTIONS = new Set([join("logs", "service.ts")]);
+
+  function serviceFiles(dir: string): string[] {
+    return readdirSync(dir, { withFileTypes: true }).flatMap((entry) => {
+      const full = join(dir, entry.name);
+      if (entry.isDirectory()) return serviceFiles(full);
+      return entry.name.endsWith(".ts") && !entry.name.endsWith(".test.ts") ? [full] : [];
+    });
+  }
+
+  const count = (text: string, needle: string) => text.split(needle).length - 1;
+
+  it("arms watchChildTimeout once per spawn(getPythonBin()) call", () => {
+    const offenders: string[] = [];
+    let checked = 0;
+
+    for (const file of serviceFiles(modulesDir)) {
+      const rel = relative(modulesDir, file);
+      if (STREAMING_EXCEPTIONS.has(rel)) continue;
+      const text = readFileSync(file, "utf8");
+      const spawns = count(text, "spawn(getPythonBin()");
+      if (spawns === 0) continue;
+      checked += spawns;
+      if (count(text, "watchChildTimeout(") < spawns) offenders.push(rel);
+    }
+
+    expect(checked).toBeGreaterThanOrEqual(12);
+    expect(offenders).toEqual([]);
+  });
+});
