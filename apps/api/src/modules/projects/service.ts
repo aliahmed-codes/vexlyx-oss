@@ -48,6 +48,16 @@ const PROJECT_SELECT = {
   updatedAt: true,
 } as const;
 
+// Same reset GitService.connectRepo applies when a project is pointed at a
+// plain (non-GitHub-App) repository URL.
+const CLEARED_GITHUB_LINK = {
+  githubInstallationId: null,
+  githubRepoId: null,
+  githubRepoFullName: null,
+  githubConnectionStatus: null,
+  githubDisconnectReason: null,
+} as const;
+
 // ---------------------------------------------------------------------------
 // Service
 // ---------------------------------------------------------------------------
@@ -216,7 +226,7 @@ export class ProjectService {
 
   async update(userId: string, projectId: string, data: UpdateProjectInput) {
     // Verify ownership first
-    await this.getById(userId, projectId);
+    const current = await this.getById(userId, projectId);
 
     // If name is changing, check it won't collide with another project
     if (data.name) {
@@ -242,12 +252,19 @@ export class ProjectService {
       }
     }
 
+    // Security: a GitHub App link authorises one specific repository. Repointing
+    // the project at another URL must drop it, otherwise the project keeps
+    // status CONNECTED (and installation tokens) for a repo it no longer builds.
+    const gitUrlChanged =
+      data.gitUrl !== undefined && (data.gitUrl || null) !== current.gitUrl;
+
     try {
       const updated = await this.prisma.project.update({
         where: { id: projectId },
         data: {
           ...(data.name !== undefined && { name: data.name }),
           ...(data.gitUrl !== undefined && { gitUrl: data.gitUrl || null }),
+          ...(gitUrlChanged && CLEARED_GITHUB_LINK),
           ...(data.branch !== undefined && { branch: data.branch }),
           ...(data.buildCmd !== undefined && { buildCmd: data.buildCmd }),
           ...(data.startCmd !== undefined && { startCmd: data.startCmd }),

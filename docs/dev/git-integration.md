@@ -57,6 +57,24 @@ API (apps/api/src/modules/git/)
 
 ---
 
+## Git URL Allow-List (Security, #62)
+
+The URL is validated at three layers, because the value is ultimately passed to `git clone` on the host:
+
+| Layer | Where | Purpose |
+|-------|-------|---------|
+| API input | `GitUrlSchema` (`packages/shared`) used by create, update and `connectRepo`; also the create-project form | Reject bad URLs with a clear `400` |
+| Clone boundary | `validate_git_url()` in `system/python/git_manager.py` (`INVALID_GIT_URL`) | Protects against rows saved before validation existed and any future caller; runs before any `git` process |
+| Git itself | `GIT_ALLOW_PROTOCOL=http:https:ssh` set in `_build_env()` | Even a missed URL cannot use the `file`, `git` or `ext` transports |
+
+Allowed: `https://`/`http://` or `git@` followed directly by `github.com`, `gitlab.com` or `bitbucket.org` and an `owner/repo` path with no whitespace or control characters. Hosts are matched literally, so `github.com.evil.example` and `github.com@evil.example` are rejected.
+
+Tests: `apps/api/src/modules/projects/{schema,service,routes}.test.ts` and `tests/test_git_url_allowlist.py` (run with `python tests/test_git_url_allowlist.py`).
+
+**Known limitation:** projects that already hold a disallowed `gitUrl` are not migrated; their next build fails with `INVALID_GIT_URL` and the owner must set a supported URL.
+
+---
+
 ## Database Changes
 
 Three new optional columns on the `Project` model:

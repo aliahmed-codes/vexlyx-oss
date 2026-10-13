@@ -126,6 +126,12 @@ Projects are marked with both `status = DELETED` **and** `deletedAt = timestamp`
 
 Project names follow hosting-panel conventions: `^[a-z0-9][a-z0-9-]*[a-z0-9]$`. This ensures names can safely become subdomains and Docker container names.
 
+### Git URL validation (#62)
+
+`gitUrl` on `POST /api/projects` and `PUT /api/projects/:id` must be a GitHub, GitLab or Bitbucket URL (`https://`, `http://` or `git@host:`), the same rule as the git connect endpoint. All three use the single `GitUrlSchema` in `packages/shared/src/schemas/projects.ts`; an empty string still clears the URL. Anything else (`file://`, internal hosts, cloud metadata IPs, `ssh://` to arbitrary hosts, `ext::`, values containing whitespace or newlines) is a `400` validation error. The build worker clones this URL on the host, so accepting arbitrary URLs was an SSRF and local-repository-read vector.
+
+Changing `gitUrl` to a *different* value on update also clears the GitHub App link (`githubInstallationId`, `githubRepoId`, `githubRepoFullName`, `githubConnectionStatus`, `githubDisconnectReason`), exactly as `connectRepo` does, so a project cannot keep `CONNECTED` status for a repository it no longer builds. Re-submitting the unchanged URL leaves the link alone.
+
 ### Ownership enforced in service, not route
 
 All ownership checks (`userId === project.userId`) live in `ProjectService.getById()`, which is called at the start of every write operation. This prevents ownership bypass via any future code path.

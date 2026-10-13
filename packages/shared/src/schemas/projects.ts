@@ -38,17 +38,37 @@ const projectNameSchema = z
   );
 
 // ---------------------------------------------------------------------------
+// Git URL — single source of truth for every place a repository URL is accepted
+// ---------------------------------------------------------------------------
+
+// Security: the build worker runs `git clone <gitUrl>` on the host, so the URL
+// must be restricted to the supported Git hosts. Accepting any URL would let a
+// tenant clone from the panel host's internal network (cloud metadata, internal
+// services), `file://` paths such as other projects' workspaces, or `ext::`
+// helpers. Scheme and host are matched literally (the host must be followed
+// directly by `:` or `/`, so `github.com.evil.com` and `github.com@evil.com`
+// fail) and whitespace/control characters are rejected so the value can never
+// be split into extra git arguments. SSH URLs (git@...) are also supported.
+const GIT_URL_REGEX =
+  // eslint-disable-next-line no-control-regex -- control characters are matched on purpose, to reject them
+  /^(https?:\/\/|git@)(github\.com|gitlab\.com|bitbucket\.org)[:/][^\s\x00-\x1f\x7f]+\/[^\s\x00-\x1f\x7f]+$/;
+
+export const GIT_URL_MESSAGE =
+  "Must be a GitHub, GitLab, or Bitbucket URL (HTTPS or SSH format)";
+
+export const GitUrlSchema = z.string().regex(GIT_URL_REGEX, GIT_URL_MESSAGE);
+
+/** Optional repository URL on create/update; `""` clears it. */
+const optionalGitUrlSchema = GitUrlSchema.optional().or(z.literal(""));
+
+// ---------------------------------------------------------------------------
 // Create
 // ---------------------------------------------------------------------------
 
 export const CreateProjectSchema = z.object({
   name: projectNameSchema,
   type: ProjectTypeSchema,
-  gitUrl: z
-    .string()
-    .url("Must be a valid URL")
-    .optional()
-    .or(z.literal("")),
+  gitUrl: optionalGitUrlSchema,
   branch: z.string().min(1).max(255).default("main"),
   buildCmd: z.string().max(500).optional(),
   startCmd: z.string().max(500).optional(),
@@ -63,11 +83,7 @@ export type CreateProjectInput = z.infer<typeof CreateProjectSchema>;
 
 export const UpdateProjectSchema = z.object({
   name: projectNameSchema.optional(),
-  gitUrl: z
-    .string()
-    .url("Must be a valid URL")
-    .optional()
-    .or(z.literal("")),
+  gitUrl: optionalGitUrlSchema,
   branch: z.string().min(1).max(255).optional(),
   buildCmd: z.string().max(500).optional(),
   startCmd: z.string().max(500).optional(),
@@ -97,18 +113,8 @@ export type ProjectListQuery = z.infer<typeof ProjectListQuerySchema>;
 // Git integration (F1.3)
 // ---------------------------------------------------------------------------
 
-// Allow-list of supported Git hosts. SSH URLs (git@...) are also supported.
-const GIT_URL_REGEX =
-  /^(https?:\/\/|git@)(github\.com|gitlab\.com|bitbucket\.org)[:/].+\/.+$/;
-
 export const ConnectRepoSchema = z.object({
-  gitUrl: z
-    .string()
-    .min(1, "Git URL is required")
-    .regex(
-      GIT_URL_REGEX,
-      "Must be a GitHub, GitLab, or Bitbucket URL (HTTPS or SSH format)",
-    ),
+  gitUrl: z.string().min(1, "Git URL is required").pipe(GitUrlSchema),
   branch: z.string().min(1).max(255).default("main"),
   isPrivate: z.boolean().default(false),
 });

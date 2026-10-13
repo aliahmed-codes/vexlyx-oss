@@ -25,6 +25,7 @@ import { ApiRequestError } from "@/lib/api";
 import { fetchAPI } from "@/lib/api";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { GitHubRepoPicker, type GitHubRepoSelection } from "./GitHubRepoPicker";
+import { GitUrlSchema } from "@vexlyx/shared";
 import type { CreateProjectInput, Project, ProjectType } from "@vexlyx/shared";
 
 // ---------------------------------------------------------------------------
@@ -73,8 +74,11 @@ function validateForm(state: FormState): FormErrors {
     errors.type = "Select a project type";
   }
 
-  if (state.gitUrl && !/^https?:\/\/.+/.test(state.gitUrl)) {
-    errors.gitUrl = "Must be a valid URL (https://...)";
+  if (state.gitUrl) {
+    const gitUrl = GitUrlSchema.safeParse(state.gitUrl);
+    if (!gitUrl.success) {
+      errors.gitUrl = gitUrl.error.issues[0]?.message ?? "Invalid repository URL";
+    }
   }
 
   return errors;

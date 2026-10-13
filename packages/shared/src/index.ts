@@ -32,6 +32,7 @@ export {
   UpdateProjectSchema,
   ProjectListQuerySchema,
   ConnectRepoSchema,
+  GitUrlSchema,
   TriggerBuildSchema,
   DeploymentStatusSchema,
   DeployBodySchema,

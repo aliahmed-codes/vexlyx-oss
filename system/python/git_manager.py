@@ -14,6 +14,7 @@ Never run this script as root.
 
 import json
 import os
+import re
 import shutil
 import subprocess
 import sys
@@ -33,6 +34,34 @@ def fail(message: str, code: str = "GIT_ERROR") -> None:
     """Write a JSON error to stdout and exit 1."""
     print(json.dumps({"error": message, "code": code}), flush=True)
     sys.exit(1)
+
+
+# Security: git_url ultimately comes from user-controlled project settings and is
+# handed to `git clone` on the host. The API validates it on write, but rows
+# stored before that validation existed (and any future caller) must not be
+# able to reach internal services (cloud metadata, loopback), local paths
+# (file://, other projects' workspaces) or exotic transports (ext::), so the
+# same allow-list is enforced here, at the boundary that actually runs git.
+# fullmatch (rather than an end-of-string anchor) so a trailing newline cannot
+# slip through.
+_ALLOWED_GIT_URL = re.compile(
+    r"(https?://|git@)(github\.com|gitlab\.com|bitbucket\.org)[:/]"
+    r"[^\s\x00-\x1f\x7f]+/[^\s\x00-\x1f\x7f]+"
+)
+
+# Defence in depth: even if a disallowed URL were somehow reached, git itself
+# refuses every transport outside this list (file, git, ext, ...).
+_ALLOWED_GIT_PROTOCOLS = "http:https:ssh"
+
+
+def validate_git_url(git_url: str) -> str:
+    """Return git_url unchanged if it targets a supported host, else fail()."""
+    if not _ALLOWED_GIT_URL.fullmatch(git_url):
+        fail(
+            "Git URL must be a GitHub, GitLab, or Bitbucket URL (HTTPS or SSH format)",
+            "INVALID_GIT_URL",
+        )
+    return git_url
 
 
 def require_field(payload: dict, field: str) -> str:
@@ -59,7 +88,7 @@ def cmd_clone(payload: dict) -> None:
       accessToken       — optional short-lived HTTPS credential
     """
     project_id = require_field(payload, "projectId")
-    git_url = require_field(payload, "gitUrl")
+    git_url = validate_git_url(require_field(payload, "gitUrl"))
     branch = payload.get("branch", "main")
     projects_dir = require_field(payload, "projectsDir")
     ssh_key_path = payload.get("sshPrivateKeyPath")
@@ -156,6 +185,7 @@ def cmd_generate_ssh_key(payload: dict) -> None:
 def _build_env(ssh_key_path: str | None, access_token: str | None = None) -> dict:
     """Build the subprocess environment, injecting GIT_SSH_COMMAND when needed."""
     env = os.environ.copy()
+    env["GIT_ALLOW_PROTOCOL"] = _ALLOWED_GIT_PROTOCOLS
     if ssh_key_path:
         # Use forward slashes because git treats backslashes in GIT_SSH_COMMAND as escape sequences
         posix_key_path = Path(ssh_key_path).as_posix()
