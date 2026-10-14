@@ -8,13 +8,15 @@ import type { ServicesService } from "./service.js";
 // config/env.ts validates process.env at import time
 process.env.DATABASE_URL ??= "postgresql://user:pass@localhost:5432/vexlyx_test";
 process.env.SESSION_SECRET ??= "test-session-secret-at-least-32-characters-long";
-const { SERVICES_ROOM_ACCESS, registerServicesSocketHandlers } = await import("./socket.js");
+const { SERVICES_ACCESS } = await import("./access.js");
+const { registerServicesSocketHandlers } = await import("./socket.js");
 
 type Handler = () => Promise<void>;
 
 function connect(
   user: { role: string; permissions: string[] } | null,
   userId?: string,
+  authorizeOverride?: (userId: string | undefined, rule: unknown) => Promise<boolean>,
 ) {
   const handlers = new Map<string, Handler>();
   const socket = {
@@ -42,14 +44,69 @@ function connect(
     user: { findUnique: vi.fn().mockResolvedValue(user) },
   } as unknown as PrismaClient;
 
-  registerServicesSocketHandlers(io, service, logger, createSocketAuthorizer(prisma, logger));
+  const real = createSocketAuthorizer(prisma, logger);
+  const authorize = vi.fn((id: string | undefined, rule: Parameters<typeof real>[1]) =>
+    authorizeOverride ? authorizeOverride(id, rule) : real(id, rule),
+  );
+  registerServicesSocketHandlers(io, service, logger, authorize);
   onConnection(socket);
-  return { socket, service, handlers };
+  return { socket, service, handlers, authorize };
 }
 
 describe("subscribe:services authorization (#65)", () => {
-  it("matches the HTTP guard: ADMIN only", () => {
-    expect(SERVICES_ROOM_ACCESS).toEqual({ roles: ["ADMIN"] });
+  it("is authorized with the rule shared with the HTTP routes", async () => {
+    expect(SERVICES_ACCESS).toEqual({ roles: ["ADMIN"] });
+
+    const { handlers, authorize } = connect({ role: "ADMIN", permissions: [] }, "u1");
+    await handlers.get("subscribe:services")!();
+    await handlers.get("unsubscribe:services")!();
+
+    expect(authorize).toHaveBeenCalledWith("u1", SERVICES_ACCESS);
+  });
+
+  it("does not join or start collecting when the client leaves while the role lookup is pending", async () => {
+    let allow!: (value: boolean) => void;
+    const pending = new Promise<boolean>((resolve) => {
+      allow = resolve;
+    });
+    const { socket, service, handlers } = connect(
+      { role: "ADMIN", permissions: [] },
+      "u1",
+      () => pending,
+    );
+
+    const subscribing = handlers.get("subscribe:services")!();
+    await handlers.get("unsubscribe:services")!();
+    allow(true);
+    await subscribing;
+
+    expect(socket.join).not.toHaveBeenCalled();
+    expect(service.getStatus).not.toHaveBeenCalled();
+  });
+
+  it("does not start the push timer when the client leaves while the first snapshot is loading", async () => {
+    vi.useFakeTimers();
+    try {
+      let resolveStatus!: (value: unknown) => void;
+      const { socket, service, handlers } = connect({ role: "ADMIN", permissions: [] }, "u1");
+      (service.getStatus as ReturnType<typeof vi.fn>).mockReturnValue(
+        new Promise((resolve) => {
+          resolveStatus = resolve;
+        }),
+      );
+
+      const subscribing = handlers.get("subscribe:services")!();
+      await vi.advanceTimersByTimeAsync(0);
+      await handlers.get("unsubscribe:services")!();
+      resolveStatus({ services: [] });
+      await subscribing;
+      await vi.advanceTimersByTimeAsync(30_000);
+
+      expect(service.getStatus).toHaveBeenCalledTimes(1);
+      expect(socket.emit).not.toHaveBeenCalledWith("services:status", expect.anything());
+    } finally {
+      vi.useRealTimers();
+    }
   });
 
   it("lets an admin join and receive an initial snapshot", async () => {

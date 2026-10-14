@@ -2,10 +2,11 @@ import type { Server as SocketIOServer } from "socket.io";
 import type { FastifyBaseLogger } from "fastify";
 import { ServicesService } from "./service.js";
 import {
+  SubscriptionGate,
   authorizeSocketSubscription,
-  type SocketAccessRule,
   type SocketAuthorizer,
 } from "../../plugins/socket-auth.js";
+import { SERVICES_ACCESS } from "./access.js";
 
 // ---------------------------------------------------------------------------
 // Track active status push intervals keyed by socket ID
@@ -53,9 +54,6 @@ function stopStatusPush(socketId: string): void {
 // Register socket event handlers
 // ---------------------------------------------------------------------------
 
-/** Same rule as `GET /api/services`: `requireRole("ADMIN")`. */
-export const SERVICES_ROOM_ACCESS: SocketAccessRule = { roles: ["ADMIN"] };
-
 export function registerServicesSocketHandlers(
   io: SocketIOServer,
   service: ServicesService,
@@ -63,32 +61,40 @@ export function registerServicesSocketHandlers(
   authorize: SocketAuthorizer,
 ): void {
   io.on("connection", (socket) => {
-    // --- Subscribe to live service status (ADMIN only, like the HTTP route) ---
+    const gate = new SubscriptionGate();
+
+    // --- Subscribe to live service status (same rule as the HTTP routes) ---
     socket.on("subscribe:services", async () => {
+      const token = gate.begin();
       const allowed = await authorizeSocketSubscription(
         authorize,
         socket,
-        SERVICES_ROOM_ACCESS,
+        SERVICES_ACCESS,
         "services:forbidden",
       );
-      if (!allowed) return;
+      // Left (or disconnected) while the role lookup was pending: do not join
+      // or start the push timer after cleanup has already run.
+      if (!allowed || !gate.isCurrent(token)) return;
 
       await socket.join("services");
 
       // Send an immediate snapshot on join so the client doesn't wait 10s
       try {
         const status = await service.getStatus();
+        if (!gate.isCurrent(token)) return;
         socket.emit("services:status", status);
       } catch (err) {
         logger.error({ socketId: socket.id, err }, "Initial service status push failed");
       }
 
+      if (!gate.isCurrent(token)) return;
       startStatusPush(socket.id, io, service, logger);
       logger.debug({ socketId: socket.id }, "Subscribed to services");
     });
 
     // --- Unsubscribe from live service status ---
     socket.on("unsubscribe:services", async () => {
+      gate.cancel();
       stopStatusPush(socket.id);
       await socket.leave("services");
       logger.debug({ socketId: socket.id }, "Unsubscribed from services");
@@ -96,6 +102,7 @@ export function registerServicesSocketHandlers(
 
     // --- Cleanup on disconnect ---
     socket.on("disconnect", () => {
+      gate.cancel();
       stopStatusPush(socket.id);
     });
   });

@@ -1,16 +1,11 @@
 import type { Server as SocketIOServer } from "socket.io";
 import type { FastifyBaseLogger } from "fastify";
 import {
+  SubscriptionGate,
   authorizeSocketSubscription,
-  type SocketAccessRule,
   type SocketAuthorizer,
 } from "../../plugins/socket-auth.js";
-
-/** Same rule as every backups HTTP route: `requireRoleOrPermission(["ADMIN"], "canManageBackups")`. */
-export const BACKUPS_ROOM_ACCESS: SocketAccessRule = {
-  roles: ["ADMIN"],
-  permission: "canManageBackups",
-};
+import { BACKUPS_ACCESS } from "./access.js";
 
 /**
  * Registers subscribe/unsubscribe handlers for the "backups" room, used to
@@ -25,20 +20,25 @@ export function registerBackupSocketHandlers(
   authorize: SocketAuthorizer,
 ): void {
   io.on("connection", (socket) => {
+    const gate = new SubscriptionGate();
+
     socket.on("subscribe:backups", async () => {
+      const token = gate.begin();
       const allowed = await authorizeSocketSubscription(
         authorize,
         socket,
-        BACKUPS_ROOM_ACCESS,
+        BACKUPS_ACCESS,
         "backups:forbidden",
       );
-      if (!allowed) return;
+      // Left (or disconnected) while the role lookup was pending: do not join.
+      if (!allowed || !gate.isCurrent(token)) return;
 
       await socket.join("backups");
       logger.debug({ socketId: socket.id }, "Subscribed to backups");
     });
 
     socket.on("unsubscribe:backups", async () => {
+      gate.cancel();
       await socket.leave("backups");
       logger.debug({ socketId: socket.id }, "Unsubscribed from backups");
     });

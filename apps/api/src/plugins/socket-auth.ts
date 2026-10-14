@@ -51,6 +51,31 @@ export function createSocketAuthorizer(
 }
 
 /**
+ * Orders overlapping subscribe/unsubscribe requests on one socket.
+ *
+ * A subscribe awaits the authorization lookup; if the client leaves the page
+ * meanwhile, `unsubscribe` (or disconnect) runs first and the late subscribe
+ * must not then join the room or restart its timers. `begin()` hands out a
+ * token and `cancel()` invalidates every outstanding one.
+ */
+export class SubscriptionGate {
+  private generation = 0;
+
+  begin(): number {
+    this.generation += 1;
+    return this.generation;
+  }
+
+  cancel(): void {
+    this.generation += 1;
+  }
+
+  isCurrent(token: number): boolean {
+    return token === this.generation;
+  }
+}
+
+/**
  * Authorizes the socket against `rule`. When denied, tells the client why on
  * `deniedEvent` (so the UI can react) and returns false; the caller must then
  * skip joining the room.

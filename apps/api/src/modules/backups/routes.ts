@@ -8,6 +8,7 @@ import { getIO } from "../../plugins/socket.js";
 import { createQueue, createWorker } from "../../config/queue.js";
 import { SystemService } from "../system/service.js";
 import { BACKUP_SCHEDULER_ID, registerBackupQueue, setCurrentBackupCron } from "./scheduler.js";
+import { BACKUPS_ACCESS } from "./access.js";
 
 // ---------------------------------------------------------------------------
 // Shared error handler
@@ -32,6 +33,11 @@ export async function backupRoutes(app: FastifyInstance) {
   const service = new BackupService(app.prisma, app.log, auditLog);
   const systemService = new SystemService(app.prisma);
   const io = getIO();
+  // The same rule the Socket.IO room uses (see ./access.ts).
+  const requireBackupsAccess = app.requireRoleOrPermission(
+    BACKUPS_ACCESS.roles,
+    BACKUPS_ACCESS.permission,
+  );
 
   registerBackupSocketHandlers(io, app.log, createSocketAuthorizer(app.prisma, app.log));
 
@@ -70,7 +76,7 @@ export async function backupRoutes(app: FastifyInstance) {
   // GET /api/backups — list snapshots
   // ---------------------------------------------------------------------------
 
-  app.get("/", { preHandler: [app.requireRoleOrPermission(["ADMIN"], "canManageBackups")] }, async (_request, reply) => {
+  app.get("/", { preHandler: [requireBackupsAccess] }, async (_request, reply) => {
     try {
       const snapshots = await service.list();
       return {
@@ -88,7 +94,7 @@ export async function backupRoutes(app: FastifyInstance) {
   // GET /api/backups/settings — get schedule/retention config
   // ---------------------------------------------------------------------------
 
-  app.get("/settings", { preHandler: [app.requireRoleOrPermission(["ADMIN"], "canManageBackups")] }, async (_request, reply) => {
+  app.get("/settings", { preHandler: [requireBackupsAccess] }, async (_request, reply) => {
     try {
       return await service.getSettings();
     } catch (err) {
@@ -100,7 +106,7 @@ export async function backupRoutes(app: FastifyInstance) {
   // PUT /api/backups/settings — update schedule/retention config
   // ---------------------------------------------------------------------------
 
-  app.put("/settings", { preHandler: [app.requireRoleOrPermission(["ADMIN"], "canManageBackups")] }, async (request, reply) => {
+  app.put("/settings", { preHandler: [requireBackupsAccess] }, async (request, reply) => {
     try {
       const body = UpdateBackupSettingsSchema.parse(request.body);
       const updated = await service.updateSettings(body);
@@ -124,7 +130,7 @@ export async function backupRoutes(app: FastifyInstance) {
   // GET /api/backups/:id — snapshot detail (includes manifest)
   // ---------------------------------------------------------------------------
 
-  app.get("/:id", { preHandler: [app.requireRoleOrPermission(["ADMIN"], "canManageBackups")] }, async (request, reply) => {
+  app.get("/:id", { preHandler: [requireBackupsAccess] }, async (request, reply) => {
     try {
       const { id } = SnapshotIdParamSchema.parse(request.params);
       const snapshot = await service.get(id);
@@ -138,7 +144,7 @@ export async function backupRoutes(app: FastifyInstance) {
   // POST /api/backups — trigger a manual backup
   // ---------------------------------------------------------------------------
 
-  app.post("/", { preHandler: [app.requireRoleOrPermission(["ADMIN"], "canManageBackups")] }, async (_request, reply) => {
+  app.post("/", { preHandler: [requireBackupsAccess] }, async (_request, reply) => {
     try {
       await backupQueue.add("manual-backup", { trigger: "MANUAL" });
       reply.status(202);
@@ -152,7 +158,7 @@ export async function backupRoutes(app: FastifyInstance) {
   // DELETE /api/backups/:id — remove a snapshot and its archive
   // ---------------------------------------------------------------------------
 
-  app.delete("/:id", { preHandler: [app.requireRoleOrPermission(["ADMIN"], "canManageBackups")] }, async (request, reply) => {
+  app.delete("/:id", { preHandler: [requireBackupsAccess] }, async (request, reply) => {
     try {
       const { id } = SnapshotIdParamSchema.parse(request.params);
       await service.delete(id, request.userId!);
@@ -167,7 +173,7 @@ export async function backupRoutes(app: FastifyInstance) {
   // POST /api/backups/:id/restore — restore a single item from a snapshot
   // ---------------------------------------------------------------------------
 
-  app.post("/:id/restore", { preHandler: [app.requireRoleOrPermission(["ADMIN"], "canManageBackups")] }, async (request, reply) => {
+  app.post("/:id/restore", { preHandler: [requireBackupsAccess] }, async (request, reply) => {
     try {
       const { id } = SnapshotIdParamSchema.parse(request.params);
       const { itemType, itemId } = RestoreItemSchema.parse(request.body);

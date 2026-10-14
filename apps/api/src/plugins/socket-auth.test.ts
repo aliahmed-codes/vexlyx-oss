@@ -1,6 +1,7 @@
 import { describe, expect, it, vi } from "vitest";
 import type { PrismaClient } from "@prisma/client";
 import {
+  SubscriptionGate,
   authorizeSocketSubscription,
   createSocketAuthorizer,
   type SocketAuthorizer,
@@ -133,5 +134,43 @@ describe("authorizeSocketSubscription", () => {
       "room:forbidden",
       expect.objectContaining({ code: "FORBIDDEN_ROLE" }),
     );
+  });
+});
+
+describe("SubscriptionGate", () => {
+  it("treats the latest begin() token as current", () => {
+    const gate = new SubscriptionGate();
+
+    const token = gate.begin();
+
+    expect(gate.isCurrent(token)).toBe(true);
+  });
+
+  it("invalidates outstanding tokens on cancel()", () => {
+    const gate = new SubscriptionGate();
+    const token = gate.begin();
+
+    gate.cancel();
+
+    expect(gate.isCurrent(token)).toBe(false);
+  });
+
+  it("lets a newer subscribe supersede an older pending one", () => {
+    const gate = new SubscriptionGate();
+    const first = gate.begin();
+    const second = gate.begin();
+
+    expect(gate.isCurrent(first)).toBe(false);
+    expect(gate.isCurrent(second)).toBe(true);
+  });
+
+  it("is independent per instance (one gate per socket)", () => {
+    const a = new SubscriptionGate();
+    const b = new SubscriptionGate();
+    const token = a.begin();
+
+    b.cancel();
+
+    expect(a.isCurrent(token)).toBe(true);
   });
 });
