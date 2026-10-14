@@ -140,8 +140,15 @@ def kill_process_tree(proc: "subprocess.Popen") -> None:
             pass
 
 
-def run_bounded(timeout: int, cmd: list, **kwargs) -> "subprocess.CompletedProcess":
-    """subprocess.run with a hard time limit that also kills the child's tree."""
+def run_bounded(
+    timeout: int, cmd: list, *, fatal: bool = True, **kwargs
+) -> "subprocess.CompletedProcess":
+    """subprocess.run with a hard time limit that also kills the child's tree.
+
+    A timeout normally ends the script with COMMAND_TIMEOUT. Pass fatal=False for
+    best-effort cleanup steps: the timeout is logged and a result with return
+    code 124 is returned, so the steps after it still run.
+    """
     check = kwargs.pop("check", False)
     input_data = kwargs.pop("input", None)
     if kwargs.pop("capture_output", False):
@@ -156,6 +163,9 @@ def run_bounded(timeout: int, cmd: list, **kwargs) -> "subprocess.CompletedProce
         except subprocess.TimeoutExpired:
             kill_process_tree(proc)
             proc.communicate()
+            if not fatal:
+                log_line(f"[vexlyx] Skipped: `{' '.join(str(c) for c in cmd[:3])}` timed out after {timeout}s")
+                return subprocess.CompletedProcess(cmd, 124, "", "timed out")
             fail(
                 f"`{' '.join(str(c) for c in cmd[:4])}` timed out after {timeout}s",
                 "COMMAND_TIMEOUT",
@@ -1369,8 +1379,9 @@ def cmd_extract_static_output(payload: dict) -> None:
                 copied = True
                 break
     finally:
-        run_bounded(QUICK_TIMEOUT, [docker_bin, "rm", "-f", container_id], capture_output=True)
-        run_bounded(QUICK_TIMEOUT, [docker_bin, "rmi", "-f", image_name], capture_output=True)
+        # Best effort and independent: a timed-out `rm` must not skip the `rmi`.
+        run_bounded(QUICK_TIMEOUT, [docker_bin, "rm", "-f", container_id], fatal=False, capture_output=True)
+        run_bounded(QUICK_TIMEOUT, [docker_bin, "rmi", "-f", image_name], fatal=False, capture_output=True)
 
     if not copied:
         fail(

@@ -33,6 +33,18 @@ export const PYTHON_SCRIPT_TIMEOUT_MS = {
   sftp: 300_000,
   /** WordPress install / import / export (may stream a database dump). */
   wordpress: 1_860_000,
+  /** Full-system backup / restore (archives and database dumps). */
+  backup: 7_200_000,
+  /** Docker prune/cleanup: container prune + image prune, 600s each in the script. */
+  cleanup: 1_320_000,
+  /** UFW rule changes and status. */
+  firewall: 180_000,
+  /** Status of every managed service, one `docker inspect` each. */
+  services: 300_000,
+  /** ACME/certificate operations. */
+  ssl: 900_000,
+  /** postfix / dovecot / webmail manager commands. */
+  mail: 300_000,
 } as const;
 
 /**

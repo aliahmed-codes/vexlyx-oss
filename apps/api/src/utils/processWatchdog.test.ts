@@ -89,7 +89,12 @@ describe("every direct Python spawn is guarded", () => {
 
   const count = (text: string, needle: string) => text.split(needle).length - 1;
 
-  it("arms watchChildTimeout once per spawn(getPythonBin()) call", () => {
+  // A launcher is any spawn() whose first argument is the Python interpreter,
+  // whether written inline or held in a variable. `--version` probes are not
+  // script launches.
+  const LAUNCH = /\bspawn\(\s*(getPythonBin\(\)|getPythonExe\(\)|pythonBin|pythonExe)\s*,(?!\s*\[\s*["']--version["']\s*\])/g;
+
+  it("arms watchChildTimeout for every Python script launch", () => {
     const offenders: string[] = [];
     let checked = 0;
 
@@ -97,13 +102,23 @@ describe("every direct Python spawn is guarded", () => {
       const rel = relative(modulesDir, file);
       if (STREAMING_EXCEPTIONS.has(rel)) continue;
       const text = readFileSync(file, "utf8");
-      const spawns = count(text, "spawn(getPythonBin()");
-      if (spawns === 0) continue;
-      checked += spawns;
-      if (count(text, "watchChildTimeout(") < spawns) offenders.push(rel);
+      const launches = (text.match(LAUNCH) ?? []).length;
+      if (launches === 0) continue;
+      checked += launches;
+      if (count(text, "watchChildTimeout(") < launches) offenders.push(rel);
     }
 
-    expect(checked).toBeGreaterThanOrEqual(12);
+    // 13 inline launches + backups, cleanup, firewall, monitoring, services,
+    // ssl and the three mail managers.
+    expect(checked).toBeGreaterThanOrEqual(20);
     expect(offenders).toEqual([]);
+  });
+
+  it("recognises variable-held interpreters, not just the inline call", () => {
+    expect('spawn(pythonBin, [scriptPath], {})'.match(LAUNCH)).toHaveLength(1);
+    expect("spawn(pythonExe, [scriptPath, command], {})".match(LAUNCH)).toHaveLength(1);
+    expect("spawn(getPythonBin(), [scriptPath], {})".match(LAUNCH)).toHaveLength(1);
+    expect('spawn(pythonBin, ["--version"], {})'.match(LAUNCH)).toBeNull();
+    expect("spawn('docker', ['ps'])".match(LAUNCH)).toBeNull();
   });
 });

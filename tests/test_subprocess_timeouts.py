@@ -89,6 +89,20 @@ class TestRunBounded(unittest.TestCase):
                 self.assertEqual(payload["code"], "COMMAND_TIMEOUT")
                 self.assertIn("timed out after 1s", payload["error"])
 
+    def test_non_fatal_timeout_returns_instead_of_exiting_so_later_steps_run(self):
+        for name, module in MANAGERS.items():
+            with self.subTest(manager=name):
+                out = io.StringIO()
+                with redirect_stdout(out):
+                    result = module.run_bounded(1, SLEEP_FOREVER, fatal=False, capture_output=True)
+                    follow_up = module.run_bounded(
+                        10, [sys.executable, "-c", "print('ran')"], capture_output=True, text=True
+                    )
+
+                self.assertEqual(result.returncode, 124)
+                self.assertEqual(follow_up.stdout.strip(), "ran")
+                self.assertNotIn("COMMAND_TIMEOUT", out.getvalue())
+
     def test_a_grandchild_holding_the_pipe_does_not_defeat_the_deadline(self):
         for name, module in MANAGERS.items():
             with self.subTest(manager=name):
