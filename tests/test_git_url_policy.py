@@ -1,4 +1,5 @@
 import importlib.util
+import json
 import subprocess
 import tempfile
 import unittest
@@ -19,7 +20,7 @@ class GitUrlPolicyTests(unittest.TestCase):
         self.payload = {"projectId": "test", "projectsDir": self.temp.name}
         self.run = self.enterContext(patch.object(git_manager.subprocess, "run"))
         self.run.return_value = subprocess.CompletedProcess([], 0, "", "")
-        self.enterContext(patch("builtins.print"))
+        self.print = self.enterContext(patch("builtins.print"))
 
     def test_rejects_unsafe_url_before_commands_or_workspace_changes(self):
         workspace = Path(self.temp.name) / "test"
@@ -33,8 +34,14 @@ class GitUrlPolicyTests(unittest.TestCase):
             "https://github.com@localhost/team/repo", "https://github.com.evil.example/team/repo",
             "https://github.com/team/repo\n", "https://github.com\\@localhost/team/repo",
         ):
-            with self.subTest(url=url), self.assertRaises(SystemExit):
-                git_manager.cmd_clone({**self.payload, "gitUrl": url})
+            with self.subTest(url=url):
+                self.print.reset_mock()
+                with self.assertRaises(SystemExit) as ctx:
+                    git_manager.cmd_clone({**self.payload, "gitUrl": url})
+                self.assertEqual(ctx.exception.code, 1)
+                emitted = json.loads(self.print.call_args.args[0])
+                self.assertEqual(emitted["code"], "INVALID_GIT_URL")
+                self.assertIn("error", emitted)
         self.run.assert_not_called()
         self.assertEqual(sentinel.read_text(), "unchanged")
 

@@ -65,7 +65,14 @@ describe("project repository changes", () => {
     deletedAt: null,
     gitUrl: "https://github.com/team/old",
   };
-  const prisma = { project: { findUnique: vi.fn(), update: vi.fn() } };
+  const prisma = {
+    project: {
+      findUnique: vi.fn(),
+      findUniqueOrThrow: vi.fn(),
+      update: vi.fn(),
+      updateMany: vi.fn(),
+    },
+  };
   const service = new ProjectService(
     prisma as unknown as PrismaClient,
     {} as AuditLogService,
@@ -74,14 +81,16 @@ describe("project repository changes", () => {
   beforeEach(() => {
     vi.resetAllMocks();
     prisma.project.findUnique.mockResolvedValue(project);
+    prisma.project.findUniqueOrThrow.mockResolvedValue(project);
     prisma.project.update.mockResolvedValue(project);
+    prisma.project.updateMany.mockResolvedValue({ count: 1 });
   });
 
   it.each(["https://gitlab.com/team/new", ""])(
     "clears GitHub linkage when the repository changes: %s",
     async (gitUrl) => {
       await service.update("u1", "p1", { gitUrl });
-      expect(prisma.project.update).toHaveBeenCalledWith(
+      expect(prisma.project.updateMany).toHaveBeenCalledWith(
         expect.objectContaining({
           data: expect.objectContaining({
             gitUrl: gitUrl || null,
@@ -96,10 +105,36 @@ describe("project repository changes", () => {
     },
   );
 
+  it("writes only if the stored repository is still the one the decision was based on", async () => {
+    await service.update("u1", "p1", { gitUrl: "https://gitlab.com/team/new" });
+
+    expect(prisma.project.updateMany).toHaveBeenCalledWith(
+      expect.objectContaining({ where: { id: "p1", gitUrl: project.gitUrl } }),
+    );
+  });
+
+  it("rejects the update when another request changed the repository meanwhile", async () => {
+    prisma.project.updateMany.mockResolvedValue({ count: 0 });
+
+    await expect(
+      service.update("u1", "p1", { gitUrl: "https://gitlab.com/team/new" }),
+    ).rejects.toMatchObject({ code: "PROJECT_CONFLICT", statusCode: 409 });
+    expect(prisma.project.findUniqueOrThrow).not.toHaveBeenCalled();
+  });
+
   it("preserves linkage when the repository is unchanged", async () => {
     await service.update("u1", "p1", { gitUrl: project.gitUrl });
-    expect(prisma.project.update.mock.calls[0]![0].data).not.toHaveProperty(
+    expect(prisma.project.updateMany.mock.calls[0]![0].data).not.toHaveProperty(
       "githubInstallationId",
+    );
+  });
+
+  it("updates without a repository guard when the URL is not part of the change", async () => {
+    await service.update("u1", "p1", { buildCmd: "pnpm build" });
+
+    expect(prisma.project.updateMany).not.toHaveBeenCalled();
+    expect(prisma.project.update).toHaveBeenCalledWith(
+      expect.objectContaining({ where: { id: "p1" } }),
     );
   });
 
@@ -107,6 +142,7 @@ describe("project repository changes", () => {
     await expect(
       service.update("other", "p1", { gitUrl: "https://github.com/team/new" }),
     ).rejects.toMatchObject({ code: "FORBIDDEN" });
+    expect(prisma.project.updateMany).not.toHaveBeenCalled();
     expect(prisma.project.update).not.toHaveBeenCalled();
   });
 });
