@@ -52,6 +52,15 @@ describe("EnvService.getDecryptedMap (#49)", () => {
     });
   });
 
+  it("returns an intentionally empty value as an empty string, not a decrypt failure", async () => {
+    const { service } = fixture([record("OPTIONAL_FLAG", ""), record("API_KEY", "abc123")]);
+
+    await expect(service.getDecryptedMap(PROJECT_ID)).resolves.toEqual({
+      OPTIONAL_FLAG: "",
+      API_KEY: "abc123",
+    });
+  });
+
   it("returns an empty map for a project with no variables", async () => {
     const { service } = fixture([]);
 
