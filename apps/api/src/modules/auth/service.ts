@@ -38,6 +38,15 @@ function getDecoyHash(): Promise<string> {
   return decoyHash;
 }
 
+/**
+ * Computes the decoy hash ahead of time. Called once at startup, before the
+ * auth routes accept requests, so even the very first failed login does the
+ * same work whether or not the email exists.
+ */
+export async function prepareLoginDecoy(): Promise<void> {
+  await getDecoyHash();
+}
+
 export class AuthService {
   constructor(private prisma: PrismaClient) {}
 
