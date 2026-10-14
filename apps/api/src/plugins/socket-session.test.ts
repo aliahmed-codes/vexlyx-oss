@@ -169,4 +169,36 @@ describe("startSessionSweep", () => {
     await vi.advanceTimersByTimeAsync(5_000);
     expect(io.fetchSockets).toHaveBeenCalledTimes(3);
   });
+
+  it("does not start another pass while the previous one is still pending", async () => {
+    let release!: (sockets: never[]) => void;
+    const pending = new Promise<never[]>((resolve) => {
+      release = resolve;
+    });
+    const io = { fetchSockets: vi.fn().mockReturnValue(pending) } as unknown as SocketIOServer;
+    const stop = startSessionSweep(io, deps(), logger(), 1_000);
+
+    await vi.advanceTimersByTimeAsync(5_000);
+    expect(io.fetchSockets).toHaveBeenCalledTimes(1);
+
+    release([]);
+    await vi.advanceTimersByTimeAsync(1_000);
+    expect(io.fetchSockets).toHaveBeenCalledTimes(2);
+
+    stop();
+  });
+
+  it("keeps sweeping after a pass fails", async () => {
+    const fetchSockets = vi
+      .fn()
+      .mockRejectedValueOnce(new Error("redis down"))
+      .mockResolvedValue([]);
+    const io = { fetchSockets } as unknown as SocketIOServer;
+    const stop = startSessionSweep(io, deps(), logger(), 1_000);
+
+    await vi.advanceTimersByTimeAsync(3_000);
+    expect(fetchSockets).toHaveBeenCalledTimes(3);
+
+    stop();
+  });
 });

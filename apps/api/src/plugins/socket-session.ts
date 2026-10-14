@@ -86,15 +86,30 @@ export async function sweepInvalidSockets(
   }
 }
 
-/** Runs {@link sweepInvalidSockets} on an interval. Returns a function that stops it. */
+/**
+ * Runs {@link sweepInvalidSockets} on an interval. Returns a function that stops it.
+ *
+ * Passes never overlap: if the previous pass is still pending (e.g. Redis is
+ * unreachable and its client retries indefinitely), the tick is skipped, so a
+ * long outage holds at most one unfinished pass instead of accumulating one
+ * per interval.
+ */
 export function startSessionSweep(
   io: SocketIOServer,
   deps: SessionSweepDeps,
   logger: Pick<FastifyBaseLogger, "error" | "debug">,
   intervalMs = 60_000,
 ): () => void {
+  let running = false;
   const timer = setInterval(() => {
-    void sweepInvalidSockets(io, deps, logger);
+    if (running) {
+      logger.debug({}, "Skipping socket session sweep: previous pass still running");
+      return;
+    }
+    running = true;
+    void sweepInvalidSockets(io, deps, logger).finally(() => {
+      running = false;
+    });
   }, intervalMs);
   // Never keep the process alive just for the sweep.
   timer.unref?.();
