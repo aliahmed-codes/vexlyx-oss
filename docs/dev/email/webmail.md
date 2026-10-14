@@ -127,7 +127,7 @@ How it works (`docker/roundcube/config/local.inc.php`):
 
 1. Render both configs: `docker compose -f docker-compose.yml config` shows `ROUNDCUBE_MAIL_TLS_VERIFY: "false"`; `docker compose -f docker-compose.yml -f docker-compose.prod.yml config` shows `"true"` plus the peer name.
 2. Dev: webmail login still works against the self-signed cert.
-3. Production-like: with a trusted cert for the mail hostname, webmail login works; replacing `docker/mail-data/certs/cert.pem` with a self-signed cert and restarting Dovecot makes login fail.
+3. Production-like: with a trusted cert for the mail hostname, webmail login works. To prove an untrusted certificate is rejected, replace **both** `docker/mail-data/certs/cert.pem` and `key.pem` with a freshly generated, matching self-signed pair (for example `openssl req -x509 -newkey rsa:2048 -nodes -days 1 -subj "/CN=$VEXLYX_MAIL_HOSTNAME" -keyout key.pem -out cert.pem`) and restart Dovecot. Replacing only the certificate would leave Dovecot with a mismatched pair it cannot load, and login would then fail for the wrong reason (no TLS service at all) instead of demonstrating that Roundcube rejects an untrusted certificate. Check that Dovecot started and listens on 143 before concluding anything, then restore the original pair.
 4. PHP-level matrix (what was run for #42): a local `openssl s_server` with a cert for `mail.example.com` — strict + correct `peer_name` + trusted CA connects; no `peer_name`, untrusted CA, wrong `peer_name`, and `FALSE`/`0`/empty values are all rejected; `false` connects.
 
 ## 6. Routing Note — Why a File-Provider Route Instead of Just Docker Labels
