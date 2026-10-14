@@ -86,7 +86,7 @@ A Socket.io connection is authenticated once, at the handshake (`plugins/socket.
 | `POST /api/auth/logout` (`destroySession`) | Sockets opened with that session are disconnected immediately |
 | Password change / reset (`destroyUserSessions`) | Sockets of every destroyed session are disconnected; the caller's current session is spared |
 | Admin/reseller deletes a user (`UserService.delete`) | All of that user's sockets are disconnected |
-| Session expires silently (24h TTL), or its user no longer exists | Disconnected by the once-a-minute sweep (`startSessionSweep` in `plugins/socket-session.ts`); a Redis/DB error skips that pass rather than mass-disconnecting users |
+| Session expires silently (24h TTL), or its user no longer exists | Disconnected by the once-a-minute sweep (`startSessionSweep` in `plugins/socket-session.ts`); a Redis/DB error skips that pass rather than mass-disconnecting users. Passes never overlap: while one is still pending (e.g. during a Redis outage) later ticks are skipped, so at most one unfinished pass exists |
 
 Implementation: every socket joins `session:<id>` and `user:<id>` rooms on connect, so the hooks above target exactly the affected sockets with `io.in(room).disconnectSockets(true)`; `socket.data.sessionId` is kept next to `socket.data.userId` for the sweep.
 
