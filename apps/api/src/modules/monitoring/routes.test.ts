@@ -1,7 +1,7 @@
 import { describe, it, expect, vi, afterEach } from "vitest";
 import Fastify from "fastify";
+import fp from "fastify-plugin";
 import type { FastifyInstance } from "fastify";
-import type { PrismaClient } from "@prisma/client";
 
 process.env.DATABASE_URL ??= "postgresql://user:pass@localhost:5432/vexlyx_test";
 process.env.SESSION_SECRET ??= "test-session-secret-at-least-32-characters-long";
@@ -16,6 +16,9 @@ vi.mock("../../config/queue.js", () => ({
   createWorker: () => ({}),
 }));
 
+// The REAL session/role guards (plugins/auth.ts) run in these tests, so a
+// regression in cookie authentication or the database role check is caught.
+const { authSessionPlugin } = await import("../../plugins/auth.js");
 const { monitoringRoutes } = await import("./routes.js");
 const { MonitoringService } = await import("./service.js");
 
@@ -23,40 +26,59 @@ afterEach(() => vi.restoreAllMocks());
 
 type Role = "ADMIN" | "RESELLER" | "USER";
 
-const SESSIONS: Record<string, Role> = {
-  "admin-session": "ADMIN",
-  "reseller-session": "RESELLER",
-  "user-session": "USER",
+const SESSIONS: Record<string, string> = {
+  "admin-session": "admin-1",
+  "reseller-session": "reseller-1",
+  "user-session": "user-1",
+};
+
+const ROLES: Record<string, Role> = {
+  "admin-1": "ADMIN",
+  "reseller-1": "RESELLER",
+  "user-1": "USER",
 };
 
 async function appFixture() {
+  const fakeRedis = fp(
+    async (app) => {
+      app.decorate("redis", {
+        get: vi.fn(async (key: string) => {
+          const userId = SESSIONS[key.replace("session:", "")];
+          return userId
+            ? JSON.stringify({ userId, expiresAt: Date.now() + 60_000 })
+            : null;
+        }),
+        set: vi.fn(),
+        del: vi.fn(),
+      } as unknown as FastifyInstance["redis"]);
+    },
+    { name: "redis" },
+  );
+
+  const fakePrisma = fp(
+    async (app) => {
+      app.decorate("prisma", {
+        user: {
+          findUnique: vi.fn(async ({ where }: { where: { id: string } }) => {
+            const role = ROLES[where.id];
+            return role ? { role, permissions: [] } : null;
+          }),
+        },
+      } as unknown as FastifyInstance["prisma"]);
+    },
+    { name: "prisma" },
+  );
+
   const app = Fastify();
-  app.decorate("prisma", {} as PrismaClient);
+  await app.register(fakeRedis);
+  await app.register(fakePrisma);
+  await app.register(authSessionPlugin);
   app.decorate("registerQueue", vi.fn() as unknown as FastifyInstance["registerQueue"]);
-  app.decorate("requireAuth", vi.fn() as unknown as FastifyInstance["requireAuth"]);
-  // Mirrors the real plugin: 401 without a session, 403 when the role is not allowed.
-  app.decorate("requireRole", ((...roles: Role[]) =>
-    async (
-      request: { headers: Record<string, unknown> },
-      reply: { status: (code: number) => { send: (body: unknown) => unknown } },
-    ) => {
-      const role = SESSIONS[String(request.headers.authorization)];
-      if (!role) {
-        return reply
-          .status(401)
-          .send({ error: "Authentication required", code: "UNAUTHORIZED", details: {} });
-      }
-      if (!roles.includes(role)) {
-        return reply.status(403).send({
-          error: "You do not have permission to perform this action",
-          code: "FORBIDDEN_ROLE",
-          details: {},
-        });
-      }
-    }) as unknown as FastifyInstance["requireRole"]);
   await app.register(monitoringRoutes, { prefix: "/api/monitoring" });
   return app;
 }
+
+const cookie = (session: string) => ({ cookie: `vexlyx_session=${session}` });
 
 const ENDPOINTS = [
   { url: "/api/monitoring/server", method: "getServerMetrics" as const, result: { cpuPercent: 1 } },
@@ -77,13 +99,25 @@ describe.each(ENDPOINTS)("GET $url", ({ url, method, result }) => {
     }
   });
 
+  it("rejects an unknown or expired session cookie with 401", async () => {
+    const spy = vi.spyOn(MonitoringService.prototype, method);
+    const app = await appFixture();
+    try {
+      const res = await app.inject({ method: "GET", url, headers: cookie("not-a-session") });
+      expect(res.statusCode).toBe(401);
+      expect(spy).not.toHaveBeenCalled();
+    } finally {
+      await app.close();
+    }
+  });
+
   it.each(["user-session", "reseller-session"])(
     "rejects non-admin (%s) with 403 and never touches host metrics",
-    async (authorization) => {
+    async (session) => {
       const spy = vi.spyOn(MonitoringService.prototype, method);
       const app = await appFixture();
       try {
-        const res = await app.inject({ method: "GET", url, headers: { authorization } });
+        const res = await app.inject({ method: "GET", url, headers: cookie(session) });
         expect(res.statusCode).toBe(403);
         expect(res.json().code).toBe("FORBIDDEN_ROLE");
         expect(spy).not.toHaveBeenCalled();
@@ -97,11 +131,7 @@ describe.each(ENDPOINTS)("GET $url", ({ url, method, result }) => {
     const spy = vi.spyOn(MonitoringService.prototype, method).mockResolvedValue(result as never);
     const app = await appFixture();
     try {
-      const res = await app.inject({
-        method: "GET",
-        url,
-        headers: { authorization: "admin-session" },
-      });
+      const res = await app.inject({ method: "GET", url, headers: cookie("admin-session") });
       expect(res.statusCode).toBe(200);
       expect(spy).toHaveBeenCalledTimes(1);
     } finally {

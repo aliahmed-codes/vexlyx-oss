@@ -85,9 +85,11 @@ These metrics are **host-wide**: CPU/RAM/disk of the machine and every container
 | Surface | Enforcement |
 |---------|-------------|
 | `/api/monitoring/*` REST routes | `requireRole("ADMIN")` |
-| Socket.io `subscribe:metrics` | Role looked up in the DB on every subscribe; non-admins are not joined to the `metrics` room and receive `metrics:forbidden`. Lookup errors or a missing identity deny (fail closed). |
+| Socket.io `subscribe:metrics` and live pushes | Same rule as the routes (`MONITORING_ACCESS` in `modules/monitoring/access.ts`). The role is read from the DB on subscribe **and again before every broadcast**, once per distinct user: a demoted admin is removed from the `metrics` room and receives `metrics:forbidden` within one push interval. Non-admins are never joined; lookup errors or a missing identity deny (fail closed). A subscribe cancelled by `unsubscribe`/`disconnect` while its lookup is pending does not join. |
 | `GET /api/dashboard/summary` → `serverMetrics` | `null` for non-admins; metrics are not even collected for them |
 | Dashboard UI | "Monitoring" sidebar item and the home-page Server Health widget are shown to `ADMIN` only |
+
+Live pushes use **one shared 5 s timer** for the whole room (one collection per tick regardless of how many tabs/admins are subscribed) that stops itself when the room is empty; the 60 s collector job applies the same re-validation before broadcasting and still persists a snapshot when nobody is subscribed.
 
 A per-user "your usage" view for customers is intentionally not part of this change; if added, scope it to the caller's own projects rather than relaxing these routes.
 
