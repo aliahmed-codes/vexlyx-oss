@@ -4,13 +4,28 @@ import { dirname, join, relative, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { ChildProcess } from "node:child_process";
-import { watchChildTimeout } from "./processWatchdog.js";
+import { PYTHON_SCRIPT_TIMEOUT_MS, watchChildTimeout } from "./processWatchdog.js";
 
 function fakeChild() {
   const child = new EventEmitter() as EventEmitter & { kill: ReturnType<typeof vi.fn> };
   child.kill = vi.fn();
   return child as unknown as ChildProcess & { kill: ReturnType<typeof vi.fn> };
 }
+
+describe("PYTHON_SCRIPT_TIMEOUT_MS", () => {
+  it("lets static output extraction finish all of its sequential commands", () => {
+    // docker create + up to 4 docker cp + docker rm + docker rmi, each allowed 120s by the script.
+    const worstCaseMs = (1 + 4 + 2) * 120_000;
+
+    expect(PYTHON_SCRIPT_TIMEOUT_MS.staticExtract).toBeGreaterThanOrEqual(worstCaseMs);
+  });
+
+  it("keeps every backstop above the script-side limit it protects", () => {
+    expect(PYTHON_SCRIPT_TIMEOUT_MS.build).toBeGreaterThan(3_600_000);
+    expect(PYTHON_SCRIPT_TIMEOUT_MS.compose).toBeGreaterThan(1_800_000);
+    expect(PYTHON_SCRIPT_TIMEOUT_MS.database).toBeGreaterThan(120_000);
+  });
+});
 
 describe("watchChildTimeout", () => {
   beforeEach(() => vi.useFakeTimers());

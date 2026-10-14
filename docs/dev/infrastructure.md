@@ -170,6 +170,10 @@ Every external command run by `system/python/*.py` is time-limited, so a hung `d
 
 Why both: killing only the Python script would orphan the `docker`/`nixpacks` grandchild, so the script has to enforce its own limits; the API backstop covers a script that is itself stuck (e.g. blocked reading a pipe).
 
+**Killing the whole tree.** A deadline that only kills the direct child is not enough: a grandchild (what `nixpacks` or `docker` start) can survive and keep the output pipe open, so the reader would still block. Every bounded command and every streamed build/compose run therefore starts in its own process group (`start_new_session`, or `CREATE_NEW_PROCESS_GROUP` on Windows) and the deadline kills the group (`kill_process_tree`: `killpg`, or `taskkill /T /F` on Windows). `database_manager.py` applies the same rule to `docker exec` (120 s). Managers that call `subprocess.run(..., timeout=)` directly (`sftp`, `backup`, `service_status`, `postfix`, `git`) turn a `TimeoutExpired` into a normal `COMMAND_TIMEOUT` error instead of a traceback.
+
+**Backstop sizing.** The API backstop for a script must cover the *sum* of the commands that script runs sequentially, not just one command's limit: static output extraction runs `docker create`, up to four `docker cp` attempts and two cleanups (120 s each), so its backstop (`staticExtract`) is 900 s. A script-side limit still applies to each command individually.
+
 Limits (seconds, script side): quick docker inspect/ps/network 30, one-shot logs 60, `docker system df` 120, prune 600, `docker compose up/start/stop/down` 1800, `nixpacks plan` 120, docker create/cp/rm 120, `docker build`/`nixpacks build` 3600, mysqldump/import 1800, git clone/fetch 900, sftp user commands 60, service status 30. The API backstops are each slightly higher (`PYTHON_SCRIPT_TIMEOUT_MS`).
 
 Intentionally unbounded: `docker compose logs --follow` (`logs_follow` / `logs/service.ts`) is a live stream that ends when the client disconnects.

@@ -345,7 +345,10 @@ def main():
         fail(f"Unknown command: {command}", "SFTP_UNKNOWN_COMMAND")
         return
 
-    handler(payload)
+    try:
+        handler(payload)
+    except subprocess.TimeoutExpired as exc:
+        fail(f"Command timed out after {exc.timeout}s", "COMMAND_TIMEOUT")
 
 if __name__ == "__main__":
     main()

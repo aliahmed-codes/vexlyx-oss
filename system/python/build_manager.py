@@ -23,6 +23,7 @@ import os
 import re
 import secrets
 import shutil
+import signal
 import subprocess
 import sys
 import tarfile
@@ -109,16 +110,61 @@ QUICK_TIMEOUT = 120       # docker create / cp / rm / rmi
 BUILD_TIMEOUT = 3600      # `docker build` / `nixpacks build`
 DB_TRANSFER_TIMEOUT = 1800  # mysqldump / mysql import
 
-def run_bounded(timeout: int, cmd: list, **kwargs) -> "subprocess.CompletedProcess":
-    """subprocess.run with a hard time limit; a timeout is reported, not hung on."""
+def _group_popen_kwargs() -> dict:
+    """Run the child in its own process group so the whole tree can be killed."""
+    if os.name == "nt":
+        return {"creationflags": subprocess.CREATE_NEW_PROCESS_GROUP}
+    return {"start_new_session": True}
+
+
+def kill_process_tree(proc: "subprocess.Popen") -> None:
+    """Kill the process and everything it started.
+
+    Killing only the direct child leaves grandchildren (e.g. what nixpacks or
+    docker spawn) running and still holding our output pipe open, which would
+    keep the deadline from ever being honoured.
+    """
     try:
-        return subprocess.run(cmd, timeout=timeout, **kwargs)
-    except subprocess.TimeoutExpired:
-        fail(
-            f"`{' '.join(str(c) for c in cmd[:4])}` timed out after {timeout}s",
-            "COMMAND_TIMEOUT",
-        )
-        raise  # unreachable - fail() exits
+        if os.name == "nt":
+            subprocess.run(
+                ["taskkill", "/T", "/F", "/PID", str(proc.pid)],
+                capture_output=True,
+                timeout=15,
+            )
+        else:
+            os.killpg(proc.pid, signal.SIGKILL)
+    except Exception:
+        try:
+            proc.kill()
+        except Exception:
+            pass
+
+
+def run_bounded(timeout: int, cmd: list, **kwargs) -> "subprocess.CompletedProcess":
+    """subprocess.run with a hard time limit that also kills the child's tree."""
+    check = kwargs.pop("check", False)
+    input_data = kwargs.pop("input", None)
+    if kwargs.pop("capture_output", False):
+        kwargs["stdout"] = subprocess.PIPE
+        kwargs["stderr"] = subprocess.PIPE
+    if input_data is not None:
+        kwargs["stdin"] = subprocess.PIPE
+
+    with subprocess.Popen(cmd, **_group_popen_kwargs(), **kwargs) as proc:
+        try:
+            stdout, stderr = proc.communicate(input_data, timeout=timeout)
+        except subprocess.TimeoutExpired:
+            kill_process_tree(proc)
+            proc.communicate()
+            fail(
+                f"`{' '.join(str(c) for c in cmd[:4])}` timed out after {timeout}s",
+                "COMMAND_TIMEOUT",
+            )
+            raise  # unreachable - fail() exits
+        returncode = proc.poll()
+    if check and returncode:
+        raise subprocess.CalledProcessError(returncode, cmd, stdout, stderr)
+    return subprocess.CompletedProcess(cmd, returncode, stdout, stderr)
 
 
 def stream_with_deadline(proc: "subprocess.Popen", timeout: int, on_line) -> bool:
@@ -130,10 +176,7 @@ def stream_with_deadline(proc: "subprocess.Popen", timeout: int, on_line) -> boo
 
     def _kill() -> None:
         timed_out.set()
-        try:
-            proc.kill()
-        except Exception:
-            pass
+        kill_process_tree(proc)
 
     timer = threading.Timer(timeout, _kill)
     timer.daemon = True
@@ -1120,6 +1163,7 @@ def cmd_build(payload: dict) -> None:
 
         proc = subprocess.Popen(
             docker_build_args,
+            **_group_popen_kwargs(),
             cwd=str(project_path),
             stdout=subprocess.PIPE,
             stderr=subprocess.STDOUT,
@@ -1234,6 +1278,7 @@ def cmd_build(payload: dict) -> None:
 
     proc = subprocess.Popen(
         cmd,
+        **_group_popen_kwargs(),
         stdout=subprocess.PIPE,
         stderr=subprocess.STDOUT,
         text=True,

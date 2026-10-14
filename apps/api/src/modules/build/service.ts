@@ -280,7 +280,7 @@ function runExtractStaticOutput(
     const child = spawn(getPythonBin(), [scriptPath], {
       stdio: ["pipe", "pipe", "pipe"],
     });
-    watchChildTimeout(child, PYTHON_SCRIPT_TIMEOUT_MS.quick, (ms) =>
+    watchChildTimeout(child, PYTHON_SCRIPT_TIMEOUT_MS.staticExtract, (ms) =>
       rejectP(
         new BuildError(
           `Static output extraction timed out after ${ms / 1000}s`,

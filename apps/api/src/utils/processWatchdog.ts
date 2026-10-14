@@ -9,8 +9,14 @@ import type { ChildProcess } from "node:child_process";
  * fires before the script has had the chance to report its own timeout.
  */
 export const PYTHON_SCRIPT_TIMEOUT_MS = {
-  /** nixpacks plan / static output extraction / dockerfile read-write. */
+  /** nixpacks plan / dockerfile read-write. */
   quick: 180_000,
+  /**
+   * Static output extraction runs `docker create`, up to four `docker cp`
+   * attempts and two cleanup commands, each allowed 120s by the script. The
+   * backstop must cover their sum or valid work gets killed mid-way.
+   */
+  staticExtract: 900_000,
   /** One-shot status / inspect style commands. */
   status: 90_000,
   /** One-shot `compose logs`. */

@@ -492,7 +492,10 @@ def main() -> None:
         )
         return
 
-    COMMANDS[command](payload)
+    try:
+        COMMANDS[command](payload)
+    except subprocess.TimeoutExpired as exc:
+        fail(f"Command timed out after {exc.timeout}s", "COMMAND_TIMEOUT")
 
 
 if __name__ == "__main__":
