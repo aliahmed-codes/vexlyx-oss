@@ -150,8 +150,8 @@ Postfix reads the compiled `.lmdb` files, not the plain-text sources, so every m
 | `sync_virtual_domains` / `sync_virtual_aliases` | The error propagates, **no reload is attempted**, and the script prints `{ "error", "code": "POSTFIX_MAP_COMPILE_FAILED" }` with exit 1. |
 | `MailService.syncVirtualDomains` / `syncVirtualAliases` | Reject with `MailError` `POSTFIX_MAP_COMPILE_FAILED` (502) instead of treating the error payload as a result. |
 | `POST /api/mail/sync` | Returns that error. |
-| Mailbox creation | The mailbox row exists, so it fails with `MAIL_SYNC_FAILED` (502): "created, but the mail server could not be updated … use Mail → Sync to retry". |
-| Container `entrypoint.sh` `compile_map` | A missing source file is still the quiet first-boot case. A real compile failure logs `ERROR: failed to compile <map>` and a startup warning instead of vanishing behind `|| true`; it does not abort startup. A failed `chmod` on the `.lmdb` is logged too. |
+| Mailbox create / reset password / quota / delete | The database change is already committed, so a failed sync is **not** an error response (creation would otherwise lose the one-time password, and a saved change would look like a failure). The call succeeds and the response carries `warnings: ["The change was saved, but the mail server could not be updated: … Use Mail → Sync to retry."]` (`DELETE` returns `200 { success, warnings }` instead of `204` only in this case). Creation is audited and the domain's first-mailbox SPF/DKIM/DMARC/MX setup still runs. The dashboard shows each warning as a toast. |
+| Container `entrypoint.sh` `compile_map` | A missing source file is still the quiet first-boot case. A compile failure logs `ERROR: failed to compile <map>`; a map whose source exists but whose `.lmdb` is missing afterwards, or that cannot be made world-readable, is logged as an error too, plus a startup warning. None of these abort startup. |
 
 Tests: `tests/test_postfix_map_rebuild.py`, `apps/api/src/modules/mail/sync.test.ts`, `apps/api/src/modules/mailboxes/service.test.ts`.
 

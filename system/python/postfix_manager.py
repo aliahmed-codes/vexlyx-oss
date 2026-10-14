@@ -531,8 +531,8 @@ class PostfixMapError(RuntimeError):
     def __init__(self, map_name: str, detail: str) -> None:
         super().__init__(
             f"Failed to rebuild Postfix map '{map_name}' ({detail}). "
-            "Postfix is still using the previous map, so recent mailbox/alias "
-            "changes are not live yet."
+            "Mail routing for recent mailbox/alias changes may be stale or "
+            "unreadable until it is rebuilt."
         )
         self.map_name = map_name
 

@@ -90,11 +90,18 @@ sleep 0.3
 # postfix:postfix), which then can't read them — every delivery fails with
 # "Permission denied" / "mail system configuration error" despite the map
 # itself being correct. Must stay world-readable after every recompile.
-for lmdb in /etc/postfix/virtual_mailbox_maps.lmdb /etc/postfix/virtual_alias_maps.lmdb; do
-    # Only maps that were actually built can be chmod'ed; a missing one was
-    # already reported by compile_map above.
-    if [ -f "$lmdb" ] && ! chmod 644 "$lmdb"; then
+for name in virtual_mailbox_maps virtual_alias_maps; do
+    lmdb="/etc/postfix/$name.lmdb"
+    # No source file means first boot: nothing was meant to be built.
+    [ -f "/etc/postfix/$name" ] || continue
+    if [ ! -f "$lmdb" ]; then
+        echo "[Vexlyx] ERROR: $lmdb is missing although $name exists - the map did not build or is not visible yet; deliveries to its recipients will fail" >&2
+        MAP_COMPILE_FAILED=1
+        continue
+    fi
+    if ! chmod 644 "$lmdb"; then
         echo "[Vexlyx] ERROR: could not make $lmdb world-readable - deliveries will fail with 'Permission denied'" >&2
+        MAP_COMPILE_FAILED=1
     fi
 done
 if [ "$MAP_COMPILE_FAILED" -ne 0 ]; then
