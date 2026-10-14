@@ -31,10 +31,10 @@ This document is the **single source of truth** for all Vexlyx features.
 | Phase 2: Multi-Runtime Support | 🟢 COMPLETED | 100% (8/8) |
 | Phase 3: Domain & DNS | 🟡 IN PROGRESS | 80% (4/5) |
 | Phase 4: Email Server | 🟡 IN PROGRESS | 88% (7/8) |
-| Phase 5: System & Administration | 🟡 IN PROGRESS | 43% (10/23) |
+| Phase 5: System & Administration | 🟡 IN PROGRESS | 42% (10/24) |
 | Phase 6: Ecosystem & Launch | 🟡 IN PROGRESS | 33% (1/3) |
 
-**Overall Completion:** 71% (44/62 features)
+**Overall Completion:** 70% (44/63 features)
 
 ---
 
@@ -2553,6 +2553,82 @@ Users can create PostgreSQL and MySQL databases (F2.6) but have no key-value sto
 - `packages/shared/src/schemas/redis.ts`
 - `apps/api/prisma/migrations/<timestamp>_add_redis_instances/migration.sql`
 - `apps/dashboard/src/app/(panel)/redis/page.tsx`, `src/components/redis/*`, `src/hooks/useRedis.ts`
+
+---
+
+### F5.31 — MongoDB Databases
+**Status:** 🔴 NOT STARTED
+
+**Description:**
+Users can create PostgreSQL and MySQL databases (F2.6) but not a document database. Node.js, Python and PHP apps built on MongoDB (Mongoose, Prisma with MongoDB, PyMongo) have to bundle their own MongoDB container or use an external service. This feature lets a user create a **MongoDB database** from the dashboard: a database and a dedicated database user with a generated password on a MongoDB server managed by the panel, a connection string for their projects, and clean removal. It is a standalone feature with its own module, table, manager script, quota and UI, and does not depend on the Redis feature or any other database feature.
+
+**Isolation model:** one shared `mongod` container with authentication enabled, and one database plus one user per created database, where the user holds the `readWrite` role on that database only. This mirrors how F2.6 isolates PostgreSQL and MySQL tenants, and avoids running one memory-hungry `mongod` per user (WiredTiger's cache defaults to roughly half of available RAM, so each extra process would otherwise compete for the host's memory). The WiredTiger cache is capped and the container gets a Docker memory limit.
+
+**Competitor research (2026):**
+- **Coolify**: one-click MongoDB as its own container (default port 27017), and database-aware scheduled backups for MongoDB (together with PostgreSQL, MySQL, MariaDB and ClickHouse) to local storage or an S3-compatible bucket. Its docs state a one-click database is not a managed cluster. ([Coolify: choose a database](https://coolify.io/docs/databases/choose-a-database), [Coolify: backups](https://coolify.io/docs/knowledge-base/databases/backups))
+- **Dokploy**: MongoDB created like any other database service, with a Docker volume at `/data/db`, optional memory and CPU limits, an optional external port and an optional single-member replica set (`rs0`) for apps that need transactions; connection strings differ for internal and external access. ([Dokploy databases](https://docs.dokploy.com/docs/core/databases), [MongoDB page (mirror)](https://www.mintlify.com/Dokploy/dokploy/databases/mongodb))
+- **cPanel / Plesk / HestiaCP**: MySQL/MariaDB and PostgreSQL only for end users; MongoDB is not part of the standard user-facing database offer.
+- **Takeaway**: PaaS panels give MongoDB its own container per resource; traditional panels do not offer it at all. Vexlyx can offer it with per-user databases on one managed server (cheaper on RAM and consistent with F2.6), internal-only by default, with the backup integration (F5.3) as the differentiator.
+- **Licensing question that needs a decision before building**: MongoDB Community Server is published under the Server Side Public License (SSPL), which is not OSI-approved and contains a clause aimed at offering the database's functionality to third parties as a service. Running an unmodified `mongod` for your own users on your own server is likely fine, but a panel that exposes "create a MongoDB database" to other people is exactly the situation to have reviewed. The maintainers must record a decision in the docs, and consider wire-compatible alternatives (for example FerretDB, Apache-2.0, backed by PostgreSQL) as a follow-up or a swap-in. Do not assume either way.
+
+**Proposed plan (for whoever picks this up):**
+1. **Data model** (own migration, own table; does **not** extend `DatabaseType` or the `Database` model, so Adminer and the SQL tooling are untouched): `MongoDatabase` (`id`, `userId`, `projectId?`, `name`, `dbUser`, `passwordEncrypted` (AES-256-GCM via `utils/encryption.ts`), `status`, timestamps; unique `(userId, name)`; the real database name is namespaced so two users can never collide).
+2. **Module** `apps/api/src/modules/mongodb/` (`routes.ts`, `service.ts`, `schema.ts`), schemas shared via `packages/shared/src/schemas/mongodb.ts`. Endpoints under `/api/mongodb`: create, list, get, delete, rotate password, test connection, and `GET /:id/stats` (size, collections, indexes from `dbStats`).
+3. **Server container**: a `mongodb` service in `docker-compose.yml` (pinned image line, auth enabled, named volume, healthcheck, WiredTiger cache cap, Docker memory limit, internal network only, no published port), with the root credentials generated once by the installer into the secrets file like the Postgres and MySQL passwords, and the installer step idempotent on re-runs and upgrades.
+4. **System layer**: a new `system/python/mongodb_manager.py`, following `database_manager.py` (strict identifier validation, JSON in and out, a hard timeout). It runs `mongosh` through `docker exec` with the script and credentials passed as data, never concatenated into a shell string, to create the database and user (`createUser` with `readWrite` on that database only), drop both on delete, change the password, and report stats. Root credentials stay inside the API/manager and are never returned.
+5. **Connection string**: `mongodb://<user>:<password>@mongodb:27017/<db>?authSource=<db>` for the internal network. No host port in the first version.
+6. **Linking to a project**: optionally set `MONGODB_URL` in the project's environment variables (F1.7) from the database.
+7. **Backups (F5.3)**: include MongoDB databases in snapshots with `mongodump --archive --gzip` for the one database (via `docker exec`, streamed like the existing SQL dumps) and restore with `mongorestore`, so users do not get a database that silently falls outside backups.
+8. **Limits**: new nullable quota `maxMongoDatabases` on `User` through the F5.20 quota machinery with F5.23 warnings; an optional per-database size limit is a follow-up.
+9. **UI**: a "MongoDB" page next to Databases: list, "Create database" dialog (name, optional project to link), a detail page with the connection string (password revealed on demand, copy button), size and collection count, rotate password, test connection, and delete with typed-name confirmation. Skeletons, empty state with CTA, refresh animation per the design system.
+10. **Audit log** (F5.18) entries for create, delete and password rotation; passwords never appear in logs, audit metadata or list responses.
+11. **Out of scope for the first version**: public host port or TLS, a web admin UI such as mongo-express (Adminer does not cover MongoDB), replica sets and sharding, per-user server instances, and importing an existing dump from the UI.
+
+**Risks to handle in the implementation:**
+- The `mongod` root credentials give access to every tenant: keep them out of API responses, logs, error messages, the process list and the project containers' environment.
+- Script injection through names or passwords into `mongosh --eval`: validate identifiers strictly, pass values as data (for example through stdin or `--eval` with JSON-encoded arguments), never string-concatenate.
+- Memory pressure from a shared server: cap the WiredTiger cache and the container, and surface usage to admins.
+- Data directory growth with no per-database quota: show size per database and plan the follow-up limit.
+- A database that survives a half-failed delete (user dropped but data kept, or the reverse): make delete idempotent and re-runnable.
+- The licence question above.
+
+**Acceptance Criteria:**
+- [ ] A user can create, list, delete, test and rotate the password of MongoDB databases from the dashboard and API; each gets its own database and a user limited to that database
+- [ ] The MongoDB server requires authentication and publishes no host port; the connection string works from a project container on the internal network
+- [ ] One user's credentials cannot read or list another user's database
+- [ ] Root credentials are generated once by the installer, never returned by the API and never present in logs, audit metadata or project environments
+- [ ] Database and user names are validated and cannot inject script into the manager
+- [ ] The password is encrypted at rest, can be rotated, and is never returned by list endpoints
+- [ ] MongoDB databases are included in backup snapshots and can be restored (F5.3)
+- [ ] `maxMongoDatabases` quota enforced and shown like the other quotas, with F5.23 warnings at 80% and 100%
+- [ ] Users see and manage only their own databases; admins see all; unauthenticated calls return 401 and other users' databases return 403/404
+- [ ] Deleting a database drops both the database and its user, and can be retried safely after a partial failure
+- [ ] Create, delete and rotate are written to the audit log
+- [ ] The licensing decision for MongoDB is recorded in the docs before release
+- [ ] PostgreSQL/MySQL provisioning (F2.6) is untouched, and the feature ships without requiring any other new database feature
+
+**Test Plan:**
+1. Create a database → server shows the database and a user with only `readWrite` on it
+2. From a project container, connect with the connection string and insert and read a document → works
+3. Connect with the user to a different database or run `show dbs` for others → denied
+4. Connect without credentials, and from the host → refused or unreachable
+5. Rotate the password → old password fails, new one works
+6. Create a snapshot and restore it after dropping the data → documents are back
+7. Create a database named with quotes, `$`, `;` or JS injection → rejected by validation
+8. Delete → database and user are gone and the name can be reused; interrupt a delete mid-way and retry → completes
+9. As another user, call the endpoints for the first user's database → 403/404; signed out → 401
+10. Reach the quota → creation refused with `QUOTA_EXCEEDED`
+
+**Developer Docs:**
+- **Location:** `docs/dev/mongodb-databases.md`
+- **Contents:** isolation model, data model, installer and compose changes, manager script and how scripts are passed safely, backups, licensing decision, limits, how to test, how to extend
+
+**Files to Create:**
+- `system/python/mongodb_manager.py`
+- `apps/api/src/modules/mongodb/{routes,service,schema}.ts`
+- `packages/shared/src/schemas/mongodb.ts`
+- `apps/api/prisma/migrations/<timestamp>_add_mongodb_databases/migration.sql`
+- `apps/dashboard/src/app/(panel)/mongodb/page.tsx`, `src/components/mongodb/*`, `src/hooks/useMongoDb.ts`
 
 ---
 
