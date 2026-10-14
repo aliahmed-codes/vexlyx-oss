@@ -48,17 +48,15 @@ function getCoreDnsZonesDir(): string {
   return fallback;
 }
 
-/**
- * Boot-time check that the CoreDNS zones directory exists and is writable, so
- * a misconfiguration is reported once at startup instead of on every record
- * mutation.
- */
 export function checkDnsZonesDirWritable():
   | { ok: true; path: string }
   | { ok: false; path: string; error: string } {
   const zonesDir = getCoreDnsZonesDir();
   try {
-    fs.accessSync(zonesDir, fs.constants.W_OK);
+    if (!fs.statSync(zonesDir).isDirectory()) {
+      throw new Error("not a directory");
+    }
+    fs.accessSync(zonesDir, fs.constants.W_OK | fs.constants.X_OK);
     return { ok: true, path: zonesDir };
   } catch (err) {
     const reason = err instanceof Error ? err.message : String(err);
@@ -693,18 +691,16 @@ export class DnsService {
     try {
       fs.rmSync(path.join(getCoreDnsZonesDir(), `${cleanHost}.db`), { force: true });
     } catch (err) {
-      // Non-fatal for the delete itself (the domain is already gone), but a
-      // stale zone keeps being served, so it must not be silent.
       this.logger?.warn({ err, hostname: cleanHost }, "Failed to remove DNS zone file");
     }
   }
 
-  /**
-   * Regenerates the zone file of every MANAGED domain from the database.
-   * A failing zone does not stop the others from being written; if any failed,
-   * a single error summarising them is thrown once the rest are done.
-   * @returns how many zones were written
-   */
+  async resyncZone(userId: string, domainId: string): Promise<{ synced: true }> {
+    const domain = await this.getDomainOrThrow(userId, domainId);
+    await this.syncZoneFile(domain.hostname, domain.id);
+    return { synced: true };
+  }
+
   async syncAllManagedZones(): Promise<number> {
     const domains = await this.prisma.domain.findMany({
       where: { dnsMode: "MANAGED" },
@@ -731,13 +727,6 @@ export class DnsService {
     return domains.length;
   }
 
-  /**
-   * Write RFC 1035 zone file to CoreDNS zones directory. No-op unless the
-   * domain is MANAGED, so connect-only domains never get a zone we don't serve.
-   *
-   * @throws DomainError `DNS_ZONE_WRITE_FAILED` when the zone file cannot be
-   *   written (the database change has already been committed by then).
-   */
   async syncZoneFile(hostname: string, domainId: string): Promise<void> {
     const domain = await this.prisma.domain.findUnique({
       where: { id: domainId },
@@ -758,16 +747,14 @@ export class DnsService {
     try {
       fs.writeFileSync(zoneFilePath, zoneContent, "utf-8");
     } catch (err) {
-      // The write is the enforcement point: if it fails CoreDNS keeps serving
-      // the previous zone while the API would otherwise report the change as
-      // saved. Make that visible instead of swallowing it.
+      // The write is what CoreDNS serves: a failure must not look like success.
       this.logger?.error(
         { err, hostname: cleanHost, zoneFilePath },
         "Failed to write DNS zone file",
       );
       const reason = (err as NodeJS.ErrnoException).code ?? "unknown filesystem error";
       throw new DomainError(
-        `The change was saved, but the DNS zone file for ${cleanHost} could not be written (${reason}), so it is not being served yet. Check the DNS zones directory permissions and free disk space, then save again to retry.`,
+        `The change was saved, but the DNS zone file for ${cleanHost} could not be written (${reason}), so it is not being served yet. Fix the DNS zones directory (permissions, free disk space) and re-sync the zone to retry.`,
         "DNS_ZONE_WRITE_FAILED",
         500,
       );

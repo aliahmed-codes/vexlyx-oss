@@ -67,6 +67,7 @@ describe("DnsService.syncZoneFile (#50)", () => {
     expect(err).toMatchObject({ code: "DNS_ZONE_WRITE_FAILED", statusCode: 500 });
     expect((err as Error).message).toContain("example.com");
     expect((err as Error).message).toContain("EACCES");
+    expect((err as Error).message).toMatch(/re-sync/i);
     // The filesystem path is for operators (logs), not for API clients.
     expect((err as Error).message).not.toMatch(/[\\/]/);
     expect(log.error).toHaveBeenCalledWith(
@@ -88,6 +89,47 @@ describe("DnsService.syncZoneFile (#50)", () => {
     });
     // The database change itself was committed before the zone write.
     expect(prisma.dnsRecord.delete).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe("DnsService.resyncZone (#50)", () => {
+  it("rewrites the zone for the owner's managed domain without changing any record", async () => {
+    const write = vi.spyOn(fs, "writeFileSync").mockImplementation(() => undefined);
+    const prisma = prismaFixture();
+    const service = new DnsService(prisma as unknown as PrismaClient, logger());
+
+    await expect(service.resyncZone("u1", "d1")).resolves.toEqual({ synced: true });
+
+    expect(write).toHaveBeenCalledTimes(1);
+    expect(prisma.dnsRecord.delete).not.toHaveBeenCalled();
+    expect(prisma.domain.findFirst).toHaveBeenCalledWith(
+      expect.objectContaining({ where: { id: "d1", userId: "u1" } }),
+    );
+  });
+
+  it("is the retry path: it succeeds after the cause is fixed even though the records are unchanged", async () => {
+    const prisma = prismaFixture();
+    const service = new DnsService(prisma as unknown as PrismaClient, logger());
+
+    writeFailsWith("ENOSPC");
+    await expect(service.resyncZone("u1", "d1")).rejects.toMatchObject({
+      code: "DNS_ZONE_WRITE_FAILED",
+    });
+
+    vi.restoreAllMocks();
+    const write = vi.spyOn(fs, "writeFileSync").mockImplementation(() => undefined);
+    await expect(service.resyncZone("u1", "d1")).resolves.toEqual({ synced: true });
+    expect(write).toHaveBeenCalledTimes(1);
+  });
+
+  it("refuses a domain the caller does not own", async () => {
+    const prisma = prismaFixture();
+    prisma.domain.findFirst.mockResolvedValue(null);
+    const service = new DnsService(prisma as unknown as PrismaClient, logger());
+
+    await expect(service.resyncZone("intruder", "d1")).rejects.toMatchObject({
+      code: "DOMAIN_NOT_FOUND",
+    });
   });
 });
 
@@ -132,13 +174,30 @@ describe("DnsService.syncAllManagedZones (#50)", () => {
 });
 
 describe("checkDnsZonesDirWritable (#50)", () => {
-  it("reports ok when the directory is writable", () => {
-    vi.spyOn(fs, "accessSync").mockImplementation(() => undefined);
+  it("reports ok when the directory is writable and searchable", () => {
+    vi.spyOn(fs, "statSync").mockReturnValue({ isDirectory: () => true } as fs.Stats);
+    const access = vi.spyOn(fs, "accessSync").mockImplementation(() => undefined);
 
     expect(checkDnsZonesDirWritable()).toMatchObject({ ok: true });
+    expect(access).toHaveBeenCalledWith(
+      expect.any(String),
+      fs.constants.W_OK | fs.constants.X_OK,
+    );
+  });
+
+  it("reports a path that exists but is not a directory", () => {
+    vi.spyOn(fs, "statSync").mockReturnValue({ isDirectory: () => false } as fs.Stats);
+    const access = vi.spyOn(fs, "accessSync").mockImplementation(() => undefined);
+
+    expect(checkDnsZonesDirWritable()).toMatchObject({
+      ok: false,
+      error: expect.stringContaining("not a directory"),
+    });
+    expect(access).not.toHaveBeenCalled();
   });
 
   it("reports the directory and reason when it is not writable", () => {
+    vi.spyOn(fs, "statSync").mockReturnValue({ isDirectory: () => true } as fs.Stats);
     vi.spyOn(fs, "accessSync").mockImplementation(() => {
       throw new Error("EACCES: permission denied");
     });

@@ -296,6 +296,24 @@ export async function domainRoutes(app: FastifyInstance) {
   );
 
   // ---------------------------------------------------------------------------
+  // POST /api/domains/:id/dns/sync — rewrite the served zone from the database.
+  // The retry path after DNS_ZONE_WRITE_FAILED: record changes are already
+  // saved, so repeating them cannot repair a zone that failed to write.
+  // ---------------------------------------------------------------------------
+  app.post(
+    "/:id/dns/sync",
+    { preHandler: [app.requireAuth, requireManagedDns] },
+    async (request, reply) => {
+      try {
+        const { id } = DomainIdParamSchema.parse(request.params);
+        return await dnsService.resyncZone(request.userId!, id);
+      } catch (err) {
+        handleDomainError(err, reply);
+      }
+    },
+  );
+
+  // ---------------------------------------------------------------------------
   // GET /api/domains/:id/dns/export — export RFC 1035 zone file
   // ---------------------------------------------------------------------------
   app.get(
