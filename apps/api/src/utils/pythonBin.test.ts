@@ -40,6 +40,52 @@ describe("getPythonBin", () => {
   });
 });
 
+const PY = '["\'`]python3?["\'`]';
+
+/**
+ * Finds the ways a module could pick a Python interpreter without going through
+ * getPythonBin(): spawning a literal, assigning or defaulting to a literal, and
+ * reading PYTHON_BIN directly. Comparisons (e.g. a framework name) and comments
+ * are ignored.
+ */
+export function findInterpreterBypasses(source: string): string[] {
+  const code = source.replace(/\/\*[\s\S]*?\*\//g, "").replace(/(^|[^:])\/\/.*$/gm, "$1");
+  const patterns: Array<[string, RegExp]> = [
+    [
+      "spawns a literal interpreter",
+      new RegExp(`\\b(?:spawn|execFile|exec|spawnSync|execFileSync)\\(\\s*${PY}`),
+    ],
+    ["assigns a literal interpreter", new RegExp(`(?<![=!<>])=\\s*${PY}`)],
+    ["defaults to a literal interpreter", new RegExp(`(?:\\?\\?|\\|\\||\\?|:)\\s*${PY}`)],
+    ["reads PYTHON_BIN directly", /\b(?:process\.)?env\.PYTHON_BIN\b/],
+  ];
+  return patterns.filter(([, pattern]) => pattern.test(code)).map(([label]) => label);
+}
+
+describe("findInterpreterBypasses (the guard itself)", () => {
+  it.each([
+    ["spawn literal", 'spawn("python", [script]);', "spawns a literal interpreter"],
+    ["spawn literal python3", "execFile('python3', args);", "spawns a literal interpreter"],
+    ["variable assigned a literal", 'const bin = "python";\nspawn(bin, [s]);', "assigns a literal interpreter"],
+    ["nullish default", 'const bin = custom ?? "python3";', "defaults to a literal interpreter"],
+    ["or default", 'const bin = custom || "python";', "defaults to a literal interpreter"],
+    ["ternary", 'const bin = win ? "python" : "python3";', "defaults to a literal interpreter"],
+    ["raw env read", "const bin = process.env.PYTHON_BIN;", "reads PYTHON_BIN directly"],
+    ["validated env read", "const bin = env.PYTHON_BIN;", "reads PYTHON_BIN directly"],
+  ])("flags %s", (_label, code, expected) => {
+    expect(findInterpreterBypasses(code)).toContain(expected);
+  });
+
+  it.each([
+    ["the helper", "const bin = getPythonBin();\nspawn(bin, [script]);"],
+    ["a framework comparison", 'framework === "python" ? a : b'],
+    ["an inequality", 'if (framework !== "python") return;'],
+    ["a comment", '// defaults to "python" on win32\n/* env.PYTHON_BIN */'],
+  ])("ignores %s", (_label, code) => {
+    expect(findInterpreterBypasses(code)).toEqual([]);
+  });
+});
+
 // Regression guard for #53: every Python script must be launched through
 // getPythonBin(), otherwise a host whose interpreter is `python3` (stock Linux)
 // or a custom PYTHON_BIN breaks only that one feature, confusingly.
@@ -62,19 +108,12 @@ describe("no module bypasses getPythonBin()", () => {
     expect(files.length).toBeGreaterThan(50);
   });
 
-  it("never spawns a hardcoded python interpreter", () => {
-    const offenders = files.filter((file) =>
-      /\b(spawn|execFile|exec|spawnSync|execFileSync)\(\s*["'`]python3?["'`]/.test(
-        readFileSync(file, "utf8"),
+  it("finds no interpreter chosen outside the shared helper", () => {
+    const offenders = files.flatMap((file) =>
+      findInterpreterBypasses(readFileSync(file, "utf8")).map(
+        (kind) => `${relative(srcRoot, file)}: ${kind}`,
       ),
     );
-    expect(offenders.map((file) => relative(srcRoot, file))).toEqual([]);
-  });
-
-  it("never reads PYTHON_BIN outside the shared helper", () => {
-    const offenders = files.filter((file) =>
-      /\b(process\.)?env\.PYTHON_BIN\b/.test(readFileSync(file, "utf8")),
-    );
-    expect(offenders.map((file) => relative(srcRoot, file))).toEqual([]);
+    expect(offenders).toEqual([]);
   });
 });
