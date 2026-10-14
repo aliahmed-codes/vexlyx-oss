@@ -108,6 +108,8 @@ If `ENCRYPTION_KEY` (or `SESSION_SECRET`, when no key is set) changes, or a stor
 | `GET …/env/:key/reveal` | `500 ENV_DECRYPT_FAILED` for that key |
 | `GET …/env` (list) | Unaffected — values stay masked and are never decrypted |
 
+**Empty values are valid.** A variable intentionally set to an empty string encrypts to a ciphertext with an empty data part (the GCM authentication tag is still present and verified), decrypts back to `""`, and never triggers `ENV_DECRYPT_FAILED`. Only a missing IV or tag, or a ciphertext that fails authentication, is treated as corrupted (`utils/encryption.test.ts`).
+
 **Recovery:** restore the previous `ENCRYPTION_KEY`, or re-enter the named variables (saving re-encrypts them with the current key). Tests: `apps/api/src/modules/env/service.test.ts` and `apps/api/src/modules/deploy/service.test.ts`.
 
 **Not done here:** a dedicated "re-enter this value" prompt in the dashboard UI — the error message names the key and the API returns a stable `code` the UI can key off.
