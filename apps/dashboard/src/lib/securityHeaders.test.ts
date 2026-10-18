@@ -19,6 +19,11 @@ describe("buildSecurityHeaders", () => {
     expect(csp).not.toContain("some/path");
   });
 
+  it("lets the GitHub App manifest form post to github.com and return to the API", () => {
+    const csp = headerValue(true, "https://api.panel.example.com");
+    expect(csp).toContain("form-action 'self' https://github.com https://api.panel.example.com;");
+  });
+
   it("sends unsafe-eval and HSTS only outside production", () => {
     expect(headerValue(false, "http://localhost:5000")).toContain("'unsafe-eval'");
     expect(headerValue(true)).not.toContain("unsafe-eval");

@@ -153,7 +153,7 @@ On screens narrower than `md` (768px):
 
 | Header | Value / purpose |
 |--------|-----------------|
-| `Content-Security-Policy` | `default-src 'self'`; `connect-src` limited to self plus the API origin (`NEXT_PUBLIC_API_URL`) over http(s) and ws(s) for Socket.io; `frame-src`/`object-src 'none'`; `base-uri`/`form-action 'self'`; `frame-ancestors 'none'` (clickjacking) |
+| `Content-Security-Policy` | `default-src 'self'`; `connect-src` limited to self plus the API origin (`NEXT_PUBLIC_API_URL`) over http(s) and ws(s) for Socket.io; `frame-src`/`object-src 'none'`; `base-uri 'self'`; `form-action` limited to self, `https://github.com` and the API origin (the GitHub App manifest form posts to GitHub and GitHub redirects back to the API); `frame-ancestors 'none'` (clickjacking) |
 | `X-Frame-Options` | `DENY` (browsers without CSP `frame-ancestors`) |
 | `X-Content-Type-Options` | `nosniff` |
 | `Referrer-Policy` | `strict-origin-when-cross-origin` |

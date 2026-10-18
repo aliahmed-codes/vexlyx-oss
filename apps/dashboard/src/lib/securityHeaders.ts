@@ -41,7 +41,10 @@ function buildContentSecurityPolicy({ apiUrl, isProduction }: SecurityHeadersOpt
     "frame-src": ["'none'"],
     "object-src": ["'none'"],
     "base-uri": ["'self'"],
-    "form-action": ["'self'"],
+    // The GitHub App setup posts a form to github.com (the manifest flow in
+    // useGitHub.ts), and GitHub then redirects back to the API, so both must be
+    // allowed or "Create GitHub App" is silently blocked.
+    "form-action": ["'self'", "https://github.com", apiOrigin],
     // Clickjacking protection: the panel is never legitimately embedded.
     "frame-ancestors": ["'none'"],
   };
