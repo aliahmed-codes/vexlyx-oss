@@ -162,6 +162,8 @@ On screens narrower than `md` (768px):
 
 **Known weakness:** `script-src` keeps `'unsafe-inline'` because Next.js emits inline bootstrap scripts and `next-themes` injects an inline theme script. Tightening it needs per-request nonces, which makes every page render dynamically; that is deliberately out of scope. `'unsafe-eval'` is added in development only (React Refresh).
 
+**Zod and `unsafe-eval`:** Zod 4 probes for eval support with `new Function`, and a strict CSP reports every blocked probe as a console error even though Zod falls back to its normal parser. The dashboard therefore sets `z.config({ jitless: true })` in `src/lib/zodConfig.ts`, imported first by the root client provider (`QueryProvider.tsx`) so it runs before any schema is created. Keep that import first when you touch the provider.
+
 **Build-time value:** the API origin comes from `NEXT_PUBLIC_API_URL`, which is fixed at `next build` (Dockerfile `ARG`), so the policy always matches the origin the client bundle actually calls. A malformed value fails the build.
 
 **If you add a new external resource** (a CDN script, an embedded iframe, an image host, another API origin) it will be blocked until its origin is added to the matching directive in `securityHeaders.ts`. Watch the browser console for `Refused to ...` messages.
