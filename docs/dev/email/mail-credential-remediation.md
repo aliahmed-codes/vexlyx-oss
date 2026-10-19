@@ -21,8 +21,23 @@ printf 'Mailbox users backup: %s\n' "$MAIL_USERS_BACKUP"
 
 Record the backup filename. Keep mail services and mailbox provisioning stopped
 throughout the procedure; do not allow another process to rewrite the users file.
-Upgrade the checkout, then restore the backup (set `MAIL_USERS_BACKUP` to the
-recorded filename if using a new shell):
+
+The panel rewrites that tracked file whenever mailboxes change, so on a running
+server Git sees it as modified and **refuses to update** ("Please commit your
+changes or stash them"). The installer behaves the same way: it leaves a checkout
+with local changes alone, so re-running `install.sh` will not upgrade it. With the
+backup safely taken, discard the local change and update the checkout (use
+`git pull`, not the installer, so mail services are not started before the
+remediation below):
+
+```sh
+git checkout -- docker/dovecot/config/users
+git pull --ff-only origin main   # or: git fetch origin tag vX.Y.Z && git checkout vX.Y.Z
+```
+
+The file is no longer tracked after this update, so Git leaves it alone from now on.
+Restore the backup (set `MAIL_USERS_BACKUP` to the recorded filename if using a new
+shell):
 
 ```sh
 sudo install -m 0600 "$MAIL_USERS_BACKUP" docker/dovecot/config/users
