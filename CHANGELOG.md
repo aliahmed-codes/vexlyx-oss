@@ -4,6 +4,10 @@ All notable changes to Vexlyx are documented here. The format follows [Keep a Ch
 
 ## Unreleased
 
+### Security
+
+- The installer installs Node.js from the NodeSource apt repository with a fingerprint-pinned signing key instead of piping a remote script into root bash, and a generated admin password is shown on the terminal only, never written to `/etc/vexlyx/install.log` (#72). Delete `install.log` on servers installed earlier.
+
 ### Fixed
 
 - Large or slow file uploads are no longer cut off after 60 seconds, and an interrupted upload leaves no partial file behind, so a retry works. Upgrading restarts Traefik once to apply the new timeouts (#155).

@@ -119,6 +119,22 @@ detect_public_ip() {
   return 1
 }
 
+# show_secret_to_operator LINE — writes LINE to the operator's terminal only,
+# bypassing the install log (run.sh keeps the real stdout on fd 3 before it
+# starts the tee). Falls back to /dev/tty when fd 3 is not open. Returns 1 when
+# there is nowhere to show it; callers must then not print the secret at all.
+show_secret_to_operator() {
+  if { true >&3; } 2>/dev/null; then
+    printf '%s
+' "$1" >&3
+  elif { true >/dev/tty; } 2>/dev/null; then
+    printf '%s
+' "$1" >/dev/tty
+  else
+    return 1
+  fi
+}
+
 # upsert_secret VAR_NAME VALUE — sets VAR_NAME=VALUE in the persisted secrets
 # file, replacing an existing line for that key or appending one, then
 # updates the current shell's copy too. Unlike generate_secrets() (write
