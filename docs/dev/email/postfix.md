@@ -37,7 +37,7 @@ Drawing from modern cloud-native standards (Mailcow, Plesk, CloudPanel, Resend),
 
 1. **RFC 6409 Port Separation**: Clear segregation between port 25 (server-to-server relay/delivery with strict open relay denial) and port 587 (authenticated client submission with mandatory TLS encryption).
 2. **Cryptographic DKIM Signing via OpenDKIM**: Automated 2048-bit RSA key pair generation per domain, auto-configuring `KeyTable`, `SigningTable`, and `TrustedHosts`, with direct integration into Vexlyx CoreDNS (F3.3) for instant one-click DNS TXT record deployment.
-3. **Decoupled Virtual Domain Sync**: Virtual domain tables (`/etc/postfix/virtual_domains`, `virtual_mailbox_maps`) synchronized as flat hash maps via `postfix_manager.py`, isolating mail delivery from runtime database schema changes.
+3. **Decoupled Virtual Domain Sync**: Virtual domain tables (`docker/postfix/config/virtual_domains`, `virtual_mailbox_maps`, mounted at `/etc/postfix/vexlyx/`) synchronized as flat hash maps via `postfix_manager.py`, isolating mail delivery from runtime database schema changes.
 4. **Hybrid Dev & Production Parity**: Full containerized development environment in `docker-compose.yml` (`vexlyx-postfix`) exposing ports 25 and 587, alongside a dedicated bare-metal production installer (`system/scripts/setup-postfix.sh`).
 5. **Interactive Diagnostic Sandbox**: Real-time SMTP handshake testing and open relay verification directly within the Vexlyx dashboard.
 
@@ -100,9 +100,9 @@ inet_interfaces = all
 inet_protocols = ipv4
 
 # Virtual Domains & Mailboxes
-virtual_mailbox_domains = /etc/postfix/virtual_domains
-virtual_mailbox_maps = hash:/etc/postfix/virtual_mailbox_maps
-virtual_alias_maps = hash:/etc/postfix/virtual_alias_maps
+virtual_mailbox_domains = /etc/postfix/vexlyx/virtual_domains
+virtual_mailbox_maps = lmdb:/etc/postfix/vexlyx/virtual_mailbox_maps
+virtual_alias_maps = lmdb:/etc/postfix/vexlyx/virtual_alias_maps
 
 # Relay Security (No Open Relay)
 mynetworks = 127.0.0.0/8 [::ffff:127.0.0.0]/104 [::1]/128 10.0.0.0/8 172.16.0.0/12 192.168.0.0/16
@@ -151,7 +151,7 @@ Postfix reads the compiled `.lmdb` files, not the plain-text sources, so every m
 | `MailService.syncVirtualDomains` / `syncVirtualAliases` | Reject with `MailError` `POSTFIX_MAP_COMPILE_FAILED` (502) instead of treating the error payload as a result. |
 | `POST /api/mail/sync` | Returns that error. |
 | Mailbox create / reset password / quota / delete | The database change is already committed, so a failed sync is **not** an error response (creation would otherwise lose the one-time password, and a saved change would look like a failure). The call succeeds and the response carries `warnings: ["The change was saved, but the mail server could not be updated: … Use Mail → Sync to retry."]` (`DELETE` returns `200 { success, warnings }` instead of `204` only in this case). Creation is audited and the domain's first-mailbox SPF/DKIM/DMARC/MX setup still runs. The dashboard shows each warning as a toast. |
-| Container `entrypoint.sh` `compile_map` | A missing source file is still the quiet first-boot case. A compile failure logs `ERROR: failed to compile <map>`; a map whose source exists but whose `.lmdb` is missing afterwards, or that cannot be made world-readable, is logged as an error too, plus a startup warning. None of these abort startup. |
+| Container `entrypoint.sh` `compile_map` | A missing source file is still the quiet first-boot case. A compile failure logs `ERROR: failed to compile <map>`, and so does a map whose `.lmdb` is missing afterwards; the entrypoint then exits 1 (`refusing to start with stale or missing routing`) instead of serving a stale map. The image `HEALTHCHECK` reports `unhealthy` when a compiled map is missing, unreadable or older than its source. See [mail runtime state](mail-state.md). |
 
 Tests: `tests/test_postfix_map_rebuild.py`, `apps/api/src/modules/mail/sync.test.ts`, `apps/api/src/modules/mailboxes/service.test.ts`.
 
@@ -197,5 +197,5 @@ Covered tests:
 ## 6. How to Extend
 
 - **F4.2 Dovecot IMAP Server** (🟢 COMPLETED): Postfix is configured with `smtpd_sasl_type = dovecot` and `smtpd_sasl_path = inet:dovecot:12345` (a TCP auth listener, not a shared unix socket — Postfix and Dovecot run in separate containers). See `docs/dev/email/dovecot.md`.
-- **F4.3 Mailbox Management UI**: The virtual mailbox map structure (`/etc/postfix/virtual_mailbox_maps`) is ready for per-user quota and address provisioning.
+- **F4.3 Mailbox Management UI**: The virtual mailbox map structure (`/etc/postfix/vexlyx/virtual_mailbox_maps`) is ready for per-user quota and address provisioning.
 - **F4.5 SPF & DMARC Auto-Configuration**: The DKIM public keys generated in F4.1 directly populate the DMARC and SPF alignment policies.

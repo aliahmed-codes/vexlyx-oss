@@ -10,9 +10,9 @@ inet_interfaces = all
 inet_protocols = ipv4
 
 # Virtual Domains & Mailboxes
-virtual_mailbox_domains = /etc/postfix/virtual_domains
-virtual_mailbox_maps = lmdb:/etc/postfix/virtual_mailbox_maps
-virtual_alias_maps = lmdb:/etc/postfix/virtual_alias_maps
+virtual_mailbox_domains = /etc/postfix/vexlyx/virtual_domains
+virtual_mailbox_maps = lmdb:/etc/postfix/vexlyx/virtual_mailbox_maps
+virtual_alias_maps = lmdb:/etc/postfix/vexlyx/virtual_alias_maps
 # Deliver virtual mailboxes via Dovecot LMTP with Pigeonhole Sieve processing (F4.7)
 virtual_transport = lmtp:dovecot:24
 # Base directory for virtual mailbox delivery (fallback / shared with Dovecot)

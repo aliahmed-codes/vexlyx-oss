@@ -139,11 +139,11 @@ services:
       - "${SMTP_PORT:-25}:25"
       - "${SUBMISSION_PORT:-587}:587"
     volumes:
-      - ./docker/postfix/config/virtual_domains:/etc/postfix/virtual_domains
-      - ./docker/postfix/config/virtual_mailbox_maps:/etc/postfix/virtual_mailbox_maps
-      - ./docker/postfix/config/virtual_alias_maps:/etc/postfix/virtual_alias_maps
+      # Runtime state is mounted as DIRECTORIES, never as single files: git
+      # replacing a file gives it a new inode and a single-file bind mount
+      # keeps serving the old one (#36). opendkim.conf is baked into the image.
+      - ./docker/postfix/config:/etc/postfix/vexlyx
       - ./docker/postfix/opendkim:/etc/opendkim
-      - ./docker/postfix/opendkim/opendkim.conf:/etc/opendkim/opendkim.conf:ro
       # Shared Maildir storage with Dovecot (F4.2) — a host bind mount rather
       # than a named volume, since named volumes reset ownership to root on
       # Windows/WSL2 mounts (see the /var/spool/postfix note below).

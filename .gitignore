@@ -81,9 +81,14 @@ docker/traefik/traefik.prod.yml
 # Production installer (F5.1)
 docker-compose.prod.env
 
-# DKIM private keys are generated at runtime for each mail domain. Never commit them.
-# (This does not affect the test keys that are already tracked.)
-docker/postfix/opendkim/keys/*/
+# Postfix routing maps and OpenDKIM tables/keys are runtime state the panel
+# rewrites on every mailbox or domain change, and DKIM private keys must never
+# be committed. Tracked state made every install "dirty" and blocked updates,
+# so only the .gitkeep placeholders are tracked.
+docker/postfix/config/*
+!docker/postfix/config/.gitkeep
+docker/postfix/opendkim/*
+!docker/postfix/opendkim/.gitkeep
 
 # Docs site (docs/): reference + project pages are generated from docs/dev,
 # CONTRIBUTING.md and SECURITY.md by docs/scripts/sync-docs.mjs

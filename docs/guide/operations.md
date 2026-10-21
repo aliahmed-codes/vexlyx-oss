@@ -117,6 +117,10 @@ curl -fsSL https://vexlyx.atlantiqs.org/install.sh | sudo VEXLYX_REPO_REF=main b
 
 An install that already follows a branch keeps following it until you set `VEXLYX_REPO_REF=latest`.
 
+::: warning Servers installed before v0.3.1
+Up to v0.3.0 the Postfix and OpenDKIM files the panel rewrites (`docker/postfix/config/`, `docker/postfix/opendkim/`) were tracked in git, which kept the checkout "dirty" and made the installer skip the update. **Re-running the installer now upgrades such a server by itself**: it backs those files up to `/etc/vexlyx/mail-backups/`, updates, and puts them back, keeping every mailbox, domain and DKIM key. Details in [Mail runtime state and upgrades](/reference/email/mail-state). A checkout with any *other* local change is still left alone.
+:::
+
 ::: warning Servers installed before v0.3.0
 Older versions committed a mailbox file (`docker/dovecot/config/users`) containing accounts with a
 publicly known password, and the panel keeps rewriting that file on your server. Git therefore

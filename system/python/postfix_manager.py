@@ -561,22 +561,25 @@ def _make_world_readable(path: Path) -> None:
 
 
 def _compile_lmdb_map(map_name: str) -> None:
-    """Rebuild /etc/postfix/<map_name>.lmdb inside the Postfix container.
+    """Rebuild /etc/postfix/vexlyx/<map_name>.lmdb inside the Postfix container.
 
     postmap drops privileges to the owner of the source file, and the bind-mounted
     source is owned by the (non-root) host user, so it cannot write into the
-    root-owned /etc/postfix. Compiling a root-owned copy and moving the result
-    into place avoids that. The result must stay world-readable: delivery runs in
-    the unprivileged `virtual` service."""
-    # The exit status of the cp/postmap/mv/chmod chain is saved before the
-    # cleanup `rm`, otherwise `rm -f` (which always succeeds) would mask a
-    # failed rebuild and report success.
+    mounted directory. Compiling a root-owned copy and renaming the result into
+    place from a temporary file in the same directory avoids that and makes the
+    swap atomic. The result must stay world-readable: delivery runs in the
+    unprivileged `virtual` service."""
+    virtual = "/etc/postfix/vexlyx"
+    # The exit status of the cp/postmap/mv chain is saved before the cleanup
+    # `rm`, otherwise `rm -f` (which always succeeds) would mask a failed
+    # rebuild and report success.
     script = (
-        f"cp /etc/postfix/{map_name} /tmp/{map_name} && "
+        f"cp {virtual}/{map_name} /tmp/{map_name} && "
         f"postmap lmdb:/tmp/{map_name} && "
-        f"mv /tmp/{map_name}.lmdb /etc/postfix/{map_name}.lmdb && "
-        f"chmod 644 /etc/postfix/{map_name}.lmdb; "
-        f"rc=$?; rm -f /tmp/{map_name}; exit $rc"
+        f"cp /tmp/{map_name}.lmdb {virtual}/.{map_name}.lmdb.new && "
+        f"chmod 644 {virtual}/.{map_name}.lmdb.new && "
+        f"mv -f {virtual}/.{map_name}.lmdb.new {virtual}/{map_name}.lmdb; "
+        f"rc=$?; rm -f /tmp/{map_name} /tmp/{map_name}.lmdb {virtual}/.{map_name}.lmdb.new; exit $rc"
     )
     try:
         proc = subprocess.run(

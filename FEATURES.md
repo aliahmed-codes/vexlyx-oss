@@ -1235,8 +1235,7 @@ Install and configure Postfix for outgoing email (SMTP).
 - `docker/postfix/master.cf`
 - `docker/postfix/opendkim.conf`
 - `docker/postfix/entrypoint.sh`
-- `docker/postfix/config/virtual_domains`
-- `docker/postfix/config/virtual_mailbox_maps`
+- `docker/postfix/config/.gitkeep` (the maps themselves are untracked runtime state, see `docs/dev/email/mail-state.md`)
 - `system/python/postfix_manager.py`
 - `system/scripts/setup-postfix.sh`
 - `apps/api/src/modules/mail/schema.ts`

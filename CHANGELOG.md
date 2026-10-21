@@ -4,6 +4,17 @@ All notable changes to Vexlyx are documented here. The format follows [Keep a Ch
 
 ## Unreleased
 
+### Fixed
+
+- A server could not be updated through the installer: the Postfix maps and OpenDKIM tables the panel rewrites at runtime were tracked in git, so every install was "dirty" within minutes and the installer answered "Local changes detected ... not pulling". They are now untracked runtime state, mounted into the containers as directories (#139). **Upgrading from v0.3.0 needs no manual step**: re-run the installer; it backs the mail state up to `/etc/vexlyx/mail-backups/`, updates, restores every mailbox, domain and DKIM key, and removes only the development entries v0.3.0 shipped (a developer's Windows key path and test domains). Any other local change is still left alone.
+- After git replaced a tracked mail file, Postfix kept reading the old copy (`550 User unknown`), because single-file bind mounts follow the file's inode. The Postfix maps and OpenDKIM state are mounted as directories (#36).
+- A Postfix map that cannot be built now stops the container with an error instead of being logged and ignored, and the Postfix image has a health check that reports `unhealthy` for a missing, unreadable or stale map.
+- Restarting the Postfix container no longer loosens DKIM private keys to a mode OpenDKIM rejects.
+
+### Tests
+
+- CI fails any job that leaves the working tree dirty, and the migration, untracked-state and mount behaviour are covered by `tests/test_installer_mail_state_migration.py`, `tests/test_mail_state_untracked.py` and `tests/test_mail_state_mounts.py`.
+
 ## [0.3.0] - 2026-10-20
 
 ### Changed

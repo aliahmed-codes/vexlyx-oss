@@ -94,22 +94,169 @@ fresh_checkout() {
     "${VEXLYX_REPO_URL}" "${VEXLYX_HOME}"
 }
 
+# --- Runtime mail state that older releases tracked in git ---------------------
+# Up to v0.3.0 the panel rewrote these tracked files at runtime, so every
+# install was "dirty" and could never be updated. From the next release they
+# are untracked runtime state. When they are the ONLY local changes, the update
+# backs them up, lets git move on, and puts them back, so nothing is lost and no
+# manual step is needed.
+MAIL_STATE_DIRS=(docker/postfix/config docker/postfix/opendkim)
+MAIL_STATE_DEV_DOMAINS=(vexlyx-test.com wp-blogs.vexlyx.localhost api.wp-blogs.vexlyx.localhost test-postfix-mailer.org test-auth.localhost)
+MAIL_STATE_BACKUP=""
+
+# Succeeds when every local change is inside the mail state directories.
+mail_state_only_dirty() {
+  local line path
+  while IFS= read -r line; do
+    path="${line:3}"
+    case "${path}" in
+      docker/postfix/config/* | docker/postfix/opendkim/*) ;;
+      *) return 1 ;;
+    esac
+  done < <(git status --porcelain 2>/dev/null)
+  return 0
+}
+
+# The .gitkeep placeholders stay tracked in releases that no longer track state.
+mail_state_tracked_files() {
+  { git ls-files -- "${MAIL_STATE_DIRS[@]}" | grep -v '/\.gitkeep$' || true; }
+}
+
+# Copies both state directories (including private DKIM keys) to a new 0700
+# directory and checks the copy before anything else happens.
+mail_state_backup() {
+  local base="${VEXLYX_MAIL_BACKUP_DIR:-/etc/vexlyx/mail-backups}" dir
+  install -d -m 0700 "${base}"
+  dir="$(mktemp -d "${base}/pre-upgrade-$(date -u +%Y%m%dT%H%M%SZ).XXXXXX")"
+  chmod 0700 "${dir}"
+  local d
+  for d in "${MAIL_STATE_DIRS[@]}"; do
+    [[ -d "${d}" ]] || continue
+    mkdir -p "${dir}/${d}"
+    cp -a "${d}/." "${dir}/${d}/"
+    if ! diff -r -q "${d}" "${dir}/${d}" >/dev/null; then
+      warn "The backup of ${d} does not match the original; not touching the checkout."
+      return 1
+    fi
+  done
+  MAIL_STATE_BACKUP="${dir}"
+  log "Backed up the mail state to ${dir}."
+}
+
+# Makes the tree clean by returning the tracked state files to the committed
+# version; the backup holds the live content.
+mail_state_prepare() {
+  mail_state_backup || return 1
+  # The API is the writer; stop it so nothing is written between backup and
+  # restore. The installer starts it again in a later step.
+  # Only an API container that mounts THIS checkout is stopped.
+  if command -v docker >/dev/null 2>&1 \
+    && docker inspect -f '{{range .Mounts}}{{println .Source}}{{end}}' vexlyx-api 2>/dev/null | grep -q -F -- "$(pwd)"; then
+    log "Stopping the API while the mail state is swapped."
+    docker stop vexlyx-api >/dev/null 2>&1 || warn "Could not stop vexlyx-api; mail changes made now may be lost."
+  fi
+  local tracked
+  tracked="$(mail_state_tracked_files)"
+  if [[ -n "${tracked}" ]]; then
+    # shellcheck disable=SC2086
+    git checkout --quiet HEAD -- ${tracked}
+  fi
+  if [[ -n "$(git status --porcelain 2>/dev/null)" ]]; then
+    warn "The checkout is still not clean after setting the mail state aside; restoring it."
+    mail_state_restore || true
+    return 1
+  fi
+}
+
+# Removes the development entries that older releases shipped (a developer's
+# Windows key path and test domains). A domain is only dropped when no private
+# key exists for it and no mailbox uses it, so real data is never touched.
+mail_state_drop_dev_entries() {
+  local opendkim=docker/postfix/opendkim config=docker/postfix/config domain file tmp
+  for domain in "${MAIL_STATE_DEV_DOMAINS[@]}"; do
+    compgen -G "${opendkim}/keys/${domain}/*.private" >/dev/null && continue
+    if [[ -f "${config}/virtual_mailbox_maps" ]] && grep -q -F "@${domain} " "${config}/virtual_mailbox_maps"; then
+      continue
+    fi
+    for file in KeyTable SigningTable TrustedHosts; do
+      [[ -f "${opendkim}/${file}" ]] || continue
+      tmp="$(mktemp)"
+      # The first field names the domain exactly: "<domain>" (TrustedHosts),
+      # "*@<domain>" (SigningTable) or "<selector>._domainkey.<domain>" (KeyTable).
+      awk -v d="${domain}" '{
+        suffix = "._domainkey." d
+        if ($1 == d || $1 == "*@" d) next
+        if (length($1) > length(suffix) && substr($1, length($1) - length(suffix) + 1) == suffix) next
+        print
+      }' "${opendkim}/${file}" >"${tmp}"
+      cat "${tmp}" >"${opendkim}/${file}"
+      rm -f "${tmp}"
+    done
+    if [[ -f "${config}/virtual_domains" ]]; then
+      tmp="$(mktemp)"
+      grep -v -x -F "${domain}" "${config}/virtual_domains" >"${tmp}" || true
+      cat "${tmp}" >"${config}/virtual_domains"
+      rm -f "${tmp}"
+    fi
+  done
+}
+
+# Puts the backed-up state back in place after the checkout moved on (or failed).
+mail_state_restore() {
+  [[ -n "${MAIL_STATE_BACKUP}" ]] || return 0
+  local d
+  for d in "${MAIL_STATE_DIRS[@]}"; do
+    [[ -d "${MAIL_STATE_BACKUP}/${d}" ]] || continue
+    mkdir -p "${d}"
+    cp -a "${MAIL_STATE_BACKUP}/${d}/." "${d}/"
+  done
+  # Only a release that no longer tracks the files may drop the dev entries
+  # and must leave a clean tree; an older commit is legitimately dirty again.
+  if [[ -z "$(mail_state_tracked_files)" ]]; then
+    mail_state_drop_dev_entries
+    if [[ -n "$(git status --porcelain 2>/dev/null)" ]]; then
+      warn "The checkout is not clean after restoring the mail state. The backup is in ${MAIL_STATE_BACKUP}."
+      return 1
+    fi
+  fi
+  log "Restored the mail state (backup kept in ${MAIL_STATE_BACKUP})."
+}
+
 # Moves an existing checkout to the chosen tag or branch. Never touches a
-# checkout with local changes. Runs from inside VEXLYX_HOME.
+# checkout with local changes, except runtime mail state that older releases
+# tracked in git (see above). Runs from inside VEXLYX_HOME.
 update_checkout() {
   if [[ ! -d .git ]]; then
     log "${VEXLYX_HOME} is not a git checkout — leaving it untouched, not updating."
     return 0
   fi
+  local migrating=0 status=0
   if [[ -n "$(git status --porcelain 2>/dev/null)" ]]; then
-    log "Local changes detected in ${VEXLYX_HOME} — leaving them as-is, not pulling."
-    if git status --porcelain -- docker/dovecot/config/users 2>/dev/null | grep -q .; then
-      log "docker/dovecot/config/users is a tracked file in this older version. To upgrade, follow"
-      log "docs/dev/email/mail-credential-remediation.md (it removes publicly known mailbox credentials)."
+    if mail_state_only_dirty; then
+      log "Only runtime mail state differs from the release; keeping it across the update."
+      mail_state_prepare || return 1
+      migrating=1
+    else
+      log "Local changes detected in ${VEXLYX_HOME} — leaving them as-is, not pulling."
+      if git status --porcelain -- docker/dovecot/config/users 2>/dev/null | grep -q .; then
+        log "docker/dovecot/config/users is a tracked file in this older version. To upgrade, follow"
+        log "docs/dev/email/mail-credential-remediation.md (it removes publicly known mailbox credentials)."
+      fi
+      return 0
     fi
-    return 0
   fi
 
+  move_checkout || status=$?
+  if [[ "${migrating}" == 1 ]]; then
+    mail_state_restore || status=1
+  fi
+  return "${status}"
+}
+
+# Fetches and checks out the chosen tag or branch in a clean checkout. Every
+# step returns on failure itself: the caller runs this inside `||`, where
+# `set -e` is switched off.
+move_checkout() {
   local current_branch
   current_branch="$(git symbolic-ref --quiet --short HEAD 2>/dev/null || true)"
 
@@ -120,7 +267,7 @@ update_checkout() {
     TARGET_KIND="branch"
     TARGET_NAME="${current_branch}"
   else
-    resolve_target
+    resolve_target || return 1
   fi
 
   if [[ "${TARGET_KIND}" == "tag" ]]; then
@@ -131,13 +278,13 @@ update_checkout() {
       return 0
     fi
     log "Updating to release ${TARGET_NAME}..."
-    git fetch --quiet --depth 1 origin "refs/tags/${TARGET_NAME}:refs/tags/${TARGET_NAME}"
-    git -c advice.detachedHead=false checkout --quiet "refs/tags/${TARGET_NAME}"
+    git fetch --quiet --depth 1 origin "refs/tags/${TARGET_NAME}:refs/tags/${TARGET_NAME}" || return 1
+    git -c advice.detachedHead=false checkout --quiet "refs/tags/${TARGET_NAME}" || return 1
   else
     log "Updating to the latest ${TARGET_NAME} (development branch)..."
-    git fetch origin "${TARGET_NAME}"
-    git checkout "${TARGET_NAME}"
-    git pull --ff-only origin "${TARGET_NAME}"
+    git fetch origin "${TARGET_NAME}" || return 1
+    git checkout "${TARGET_NAME}" || return 1
+    git pull --ff-only origin "${TARGET_NAME}" || return 1
   fi
 }
 

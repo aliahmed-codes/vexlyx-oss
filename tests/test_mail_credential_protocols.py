@@ -58,12 +58,12 @@ class MailStack:
         self.wait_for_smtp()
         # Test-only local routing. No public recipients or external mail traffic.
         docker("exec", "-i", self.names["postfix"], "sh", "-c",
-               "cat > /etc/postfix/virtual_domains", input="credential-test.example\n")
+               "cat > /etc/postfix/vexlyx/virtual_domains", input="credential-test.example\n")
         docker("exec", "-i", self.names["postfix"], "sh", "-c",
-               "cat > /etc/postfix/virtual_mailbox_maps",
+               "cat > /etc/postfix/vexlyx/virtual_mailbox_maps",
                input=f"{ADDRESS} credential-test.example/customer/Maildir/\n")
-        docker("exec", self.names["postfix"], "postmap", "lmdb:/etc/postfix/virtual_mailbox_maps")
-        docker("exec", self.names["postfix"], "chmod", "644", "/etc/postfix/virtual_mailbox_maps.lmdb")
+        docker("exec", self.names["postfix"], "postmap", "lmdb:/etc/postfix/vexlyx/virtual_mailbox_maps")
+        docker("exec", self.names["postfix"], "chmod", "644", "/etc/postfix/vexlyx/virtual_mailbox_maps.lmdb")
         docker("exec", self.names["postfix"], "postfix", "reload")
         if webmail:
             docker("create", "--name", self.names["roundcube"], "--network", self.network,

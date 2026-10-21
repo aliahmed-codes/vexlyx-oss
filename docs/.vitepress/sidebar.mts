@@ -104,6 +104,7 @@ const groups: Group[] = [
       "reference/email/vacation-responder",
       "reference/email/mail-operations",
       "reference/email/mail-credential-remediation",
+      "reference/email/mail-state",
       "reference/system-transactional-email",
     ],
   },

@@ -26,6 +26,14 @@ jobs:
       - run: docker build -t vexlyx-postfix:credentials-test docker/postfix
       - run: python3 -m unittest tests.test_mail_credential_security tests.test_mail_credential_protocols -v
       - run: python3 -m unittest tests.test_roundcube_tls -v
+      - run: python3 -m unittest tests.test_mail_state_mounts -v
+      - name: Fail if the tests left the working tree dirty
+        run: |
+          if [ -n "$(git status --porcelain)" ]; then
+            git status --porcelain
+            echo "::error::The test run changed tracked or untracked files. Runtime state must live in ignored paths."
+            exit 1
+          fi
 
   lint:
     runs-on: ubuntu-latest
@@ -69,6 +77,17 @@ jobs:
       - run: python3 -m unittest discover -s tests -p test_git_url_policy.py
       - run: python3 -m unittest discover -s tests -p test_installer_release_channel.py
       - run: python3 -m unittest discover -s tests -p test_installer_nixpacks.py
+      - run: python3 -m unittest discover -s tests -p test_installer_mail_state_migration.py
+      - run: python3 -m unittest discover -s tests -p test_mail_state_untracked.py
+      - run: python3 -m unittest discover -s tests -p test_postfix_map_rebuild.py
+      - run: python3 -m unittest discover -s tests -p test_opendkim_reload.py
+      - name: Fail if the tests left the working tree dirty
+        run: |
+          if [ -n "$(git status --porcelain)" ]; then
+            git status --porcelain
+            echo "::error::The test run changed tracked or untracked files. Runtime state must live in ignored paths."
+            exit 1
+          fi
 
   build:
     runs-on: ubuntu-latest
