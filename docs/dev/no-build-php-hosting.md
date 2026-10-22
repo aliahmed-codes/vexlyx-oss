@@ -53,6 +53,39 @@ directory instead of a named volume:
   reads. This read-write/read-only asymmetry mirrors `wordpress.yml`'s `app`
   vs `web` volumes exactly.
 
+### Who owns the docroot (#151)
+
+A read-write mount is not enough: the API creates the project directory as
+`root:root 0755`, while PHP-FPM runs as `www-data` (uid/gid 82 in both the
+`vexlyx-php-fpm` and `wordpress` images), so PHP could not create a single file
+in its own docroot. Tested as root with `docker exec` it appears to work; always
+test with `docker exec -u www-data`.
+
+- **Deploy** (`hand_docroot_to_php` in `docker_manager.py`): `chown 82:82` of the
+  project directory itself (no-build PHP) or of `wp-content` and its
+  `plugins`/`themes`/`uploads` folders (WordPress). Non-recursive, so a migrated
+  site with tens of thousands of files is not walked, and nothing is made
+  world-writable. It opens the directory with `O_NOFOLLOW` and changes the open
+  descriptor, so a symlink planted by the application cannot redirect it.
+- **File Manager** (`FileService`, `utils/phpRuntimeOwnership.ts`): files and
+  folders it creates (new file, saved edit, upload, folder, copy, extract,
+  compress) are handed to uid 82 as well, otherwise an uploaded `wp-config.php`
+  could be read but never modified by the application. For an upload that is
+  the final renamed file, not the `.part` temp file. Only the API running as
+  root does this; ownership failures are logged and never fail the request.
+- **`deploy/` stays root-owned and out of reach.** PHP owns the directory
+  around it, so it could rename `deploy/` or swap it for a symlink and have the
+  root-run deploy write the compose file elsewhere. Three guards: the File
+  Manager never hands `deploy/` or `.git/` over; the `app` container mounts
+  `deploy/` over itself read-only (`{{deploy_dir}}:/var/www/html/deploy:ro`),
+  and a mount point cannot be renamed or removed from inside the container; and
+  `cmd_deploy` refuses to continue if `deploy` is a symlink.
+- **Existing projects**: `apps/api/src/scripts/hand-docroots-to-php.ts`, run by
+  installer step 14, applies the same ownership to every live no-build PHP and
+  WordPress project once. It writes a marker (`workspaces/.migrations/
+  php-docroot-ownership-v1`) only when every project succeeded, logs each
+  project it changed, and never fails the install.
+
 ## Nginx config
 
 ### Which paths are served
