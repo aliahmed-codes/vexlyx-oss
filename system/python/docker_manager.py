@@ -139,6 +139,16 @@ def hand_docroot_to_php(project_dir: Path, project_type: str, php_no_build: bool
 
     targets = []
     if php_no_build:
+        if os.path.lexists(Path(project_dir) / ".git"):
+            # A git checkout keeps a root-owned root. The panel runs git as
+            # root, and git refuses a repository whose directory another user
+            # owns ("dubious ownership"), which would break every pull and
+            # auto-deploy. safe.directory is no answer either: with PHP owning
+            # the root it could replace .git, whose hooks and config run as
+            # root on the next pull. So PHP cannot write to the root of such a
+            # site; see docs/dev/no-build-php-hosting.md.
+            log_line("[vexlyx] Git-connected project: leaving its root owned by root (PHP cannot write to the site root)")
+            return []
         targets.append(Path(project_dir))
     elif project_type.upper() == "WORDPRESS":
         wp_content = Path(project_dir) / "wp-content"

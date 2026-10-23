@@ -4,6 +4,7 @@ import type { FastifyBaseLogger } from "fastify";
 import type { PrismaClient } from "@prisma/client";
 import {
   handOverToPhp,
+  isGitCheckout,
   phpDocrootTargets,
   phpOwnershipScope,
 } from "./phpRuntimeOwnership.js";
@@ -56,6 +57,15 @@ export async function handExistingDocrootsToPhp(
       logger.warn(
         { projectId: project.id, name: project.name },
         "Skipped PHP docroot ownership: the project directory is missing or not a directory",
+      );
+      continue;
+    }
+
+    if (scope === "project" && (await isGitCheckout(projectDir))) {
+      result.skipped++;
+      logger.info(
+        { projectId: project.id, name: project.name },
+        "Left the root of this git-connected PHP project root-owned: git runs as root and refuses a repository another user owns",
       );
       continue;
     }

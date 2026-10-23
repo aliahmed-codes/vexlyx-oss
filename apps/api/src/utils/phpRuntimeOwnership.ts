@@ -66,10 +66,26 @@ function inScope(root: string, target: string, scope: PhpOwnershipScope): boolea
 }
 
 /**
+ * True when the project directory is a git checkout (it contains `.git`, a
+ * directory or, for worktrees and submodules, a gitlink file or even a dangling
+ * link: anything git would treat as the repository marker).
+ *
+ * The root of a checkout must stay root-owned. The panel runs git as root, and
+ * git refuses a repository whose directory belongs to another user ("detected
+ * dubious ownership"), which would break every pull, redeploy and auto-deploy.
+ * Working around it with `safe.directory` is not an option: a PHP-owned root
+ * could replace `.git`, and its hooks and config run as root on the next pull.
+ */
+export async function isGitCheckout(projectDir: string): Promise<boolean> {
+  return fs.lstat(path.join(projectDir, ".git")).then(() => true, () => false);
+}
+
+/**
  * Hands files created by the panel (which runs as root) to the PHP-FPM user,
  * so PHP can modify what was uploaded or edited through the File Manager.
  * lchown never follows a symlink, and the walk only descends into real
  * directories, so a link planted by the application cannot redirect it.
+ * The project root itself is skipped when the project is a git checkout.
  */
 export async function handOverToPhp(
   root: string,
@@ -78,11 +94,12 @@ export async function handOverToPhp(
   options: { recursive?: boolean; chown?: Chown } = {},
 ): Promise<void> {
   const chown = options.chown ?? lchownToPhp;
+  const keepRoot = scope === "project" && (await isGitCheckout(root));
 
   const visit = async (target: string): Promise<void> => {
     if (!inScope(root, target, scope)) return;
     try {
-      await chown(target);
+      if (!(keepRoot && path.relative(root, target) === "")) await chown(target);
       if (!options.recursive) return;
       const stat = await fs.lstat(target);
       if (!stat.isDirectory()) return;

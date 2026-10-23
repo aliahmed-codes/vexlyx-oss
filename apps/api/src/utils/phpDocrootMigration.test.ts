@@ -118,6 +118,44 @@ describe("handExistingDocrootsToPhp", () => {
     );
   });
 
+  it("leaves the root of a git-connected project alone and says so", async () => {
+    await fs.mkdir(path.join(projectsDir, "g1", ".git"), { recursive: true });
+    const { prisma } = prismaWith([{ id: "g1", type: "PHP", buildCmd: null, name: "Git site" }]);
+
+    const result = await handExistingDocrootsToPhp(prisma, { projectsDir, chown, logger });
+
+    expect(changed).toEqual([]);
+    expect(result).toMatchObject({ changed: 0, skipped: 1, failed: 0 });
+    expect(logger.info).toHaveBeenCalledWith(
+      expect.objectContaining({ projectId: "g1" }),
+      expect.stringContaining("git"),
+    );
+  });
+
+  it("still repairs the plain projects next to a git-connected one", async () => {
+    await fs.mkdir(path.join(projectsDir, "g1", ".git"), { recursive: true });
+    await fs.mkdir(path.join(projectsDir, "p1"));
+    const { prisma } = prismaWith([
+      { id: "g1", type: "PHP", buildCmd: null, name: "Git site" },
+      { id: "p1", type: "PHP", buildCmd: null, name: "Plain" },
+    ]);
+
+    const result = await handExistingDocrootsToPhp(prisma, { projectsDir, chown, logger });
+
+    expect(changed).toEqual(["p1"]);
+    expect(result).toMatchObject({ changed: 1, skipped: 1 });
+  });
+
+  it("does not change WordPress handling when the project directory has a .git", async () => {
+    await fs.mkdir(path.join(projectsDir, "wp1", ".git"), { recursive: true });
+    await fs.mkdir(path.join(projectsDir, "wp1", "wp-content"));
+    const { prisma } = prismaWith([{ id: "wp1", type: "WORDPRESS", buildCmd: null, name: "Blog" }]);
+
+    await handExistingDocrootsToPhp(prisma, { projectsDir, chown, logger });
+
+    expect(changed).toEqual(["wp1/wp-content"]);
+  });
+
   it("is idempotent: running again changes the same directories and nothing more", async () => {
     await fs.mkdir(path.join(projectsDir, "p1"));
     const { prisma } = prismaWith([{ id: "p1", type: "PHP", buildCmd: null, name: "Shop" }]);

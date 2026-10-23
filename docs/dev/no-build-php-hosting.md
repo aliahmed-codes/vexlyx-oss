@@ -62,7 +62,7 @@ in its own docroot. Tested as root with `docker exec` it appears to work; always
 test with `docker exec -u www-data`.
 
 - **Deploy** (`hand_docroot_to_php` in `docker_manager.py`): `chown 82:82` of the
-  project directory itself (no-build PHP) or of `wp-content` and its
+  project directory itself (no-build PHP, except git checkouts, see below) or of `wp-content` and its
   `plugins`/`themes`/`uploads` folders (WordPress). Non-recursive, so a migrated
   site with tens of thousands of files is not walked, and nothing is made
   world-writable. It opens the directory with `O_NOFOLLOW` and changes the open
@@ -85,6 +85,40 @@ test with `docker exec -u www-data`.
   WordPress project once. It writes a marker (`workspaces/.migrations/
   php-docroot-ownership-v1`) only when every project succeeded, logs each
   project it changed, and never fails the install.
+
+#### Git-connected sites: the root is not writable by PHP
+
+When the project directory contains `.git` (the site is connected to a git
+repository), **its root stays `root:root` and PHP cannot create, change or
+delete anything directly in it.** Subfolders keep working as described above
+(files and folders created inside them through the File Manager are handed to
+uid 82), but not the top level. This is deliberate, and applies to all three
+places that change ownership: `hand_docroot_to_php` at deploy,
+`handOverToPhp` in the File Manager (even when extracting into the root) and the
+one-time repair script, which logs the project as skipped.
+
+Two reasons, and neither can be traded away:
+
+1. **git would stop working.** The panel runs git as root in the API container
+   (clone, fetch, pull on every build and auto-deploy). Since git 2.35.2 it
+   refuses a repository whose directory belongs to another user: `fatal:
+   detected dubious ownership in repository`. Found on QA with git 2.39.5.
+   Worse, `git_manager.py clone` treats a failed fetch or pull as "broken
+   repository" and deletes the workspace to clone it again, so with a PHP-owned
+   root every redeploy silently wiped everything not committed to git (an
+   uploaded file was gone after the next build) while the pull "worked".
+2. **`safe.directory` is not a way out.** Marking the directory safe would make
+   git trust a root that PHP controls, and PHP could replace `.git`; its hooks
+   and config then run as root in the API container on the next pull.
+
+What this means for a site: it can read everything and write in its subfolders
+(uploads, caches), but a self-installer that writes into the top level (a
+Duplicator migration, WordPress core updates in place) needs a project that is
+not git-connected. Giving PHP selected writable subfolders of a checkout
+automatically is a possible later feature. The check is "the root contains
+`.git`" (a directory, a gitlink file or even a dangling link); a `.gitignore`
+does not count. WordPress projects are unaffected: only `wp-content` is handed
+over there, never the project root.
 
 ## Nginx config
 

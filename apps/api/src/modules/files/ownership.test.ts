@@ -173,6 +173,56 @@ describe("File Manager hands PHP projects' files to PHP-FPM (#151)", () => {
     expect(owned().sort()).toEqual(["out", "out/site", "out/site/inc", "out/site/inc/a.php", "out/site/index.php"]);
   });
 
+  describe("a project that is a git checkout", () => {
+    // git runs as root in the panel; a root directory owned by uid 82 makes it
+    // fail with "dubious ownership", and PHP could replace .git.
+    async function extractIntoRoot(project: ProjectShape) {
+      execFileSync(
+        PYTHON,
+        [
+          "-I",
+          "-c",
+          "import sys, zipfile\nwith zipfile.ZipFile(sys.argv[1], 'w') as z:\n    z.writestr('index.php', 'x')\n    z.writestr('inc/a.php', 'x')",
+          path.join(root, "site.zip"),
+        ],
+        { stdio: "pipe" },
+      );
+      await serviceFor(project).extract(OWNER, PROJECT_ID, "site.zip", ".");
+    }
+
+    it("never hands the project root over, even when extracting into it", async () => {
+      await fs.mkdir(path.join(root, ".git"));
+      await extractIntoRoot(PHP_NO_BUILD);
+
+      expect(owned()).not.toContain("");
+      expect(owned()).not.toContain(".");
+      expect(owned()).not.toContain(".git");
+      // What was extracted into it is still handed over.
+      expect(owned()).toContain("index.php");
+      expect(owned()).toContain("inc/a.php");
+    });
+
+    it("still hands the root of a plain no-build project over when extracting into it", async () => {
+      await extractIntoRoot(PHP_NO_BUILD);
+
+      expect(owned()).toContain("");
+    });
+
+    it("hands over a file created in a subfolder", async () => {
+      await fs.mkdir(path.join(root, ".git"));
+      await serviceFor(PHP_NO_BUILD).createFile(OWNER, PROJECT_ID, "app/a.php", "x");
+
+      expect(owned()).toEqual(["app", "app/a.php"]);
+    });
+
+    it("leaves WordPress handling unchanged", async () => {
+      await fs.mkdir(path.join(root, ".git"));
+      await serviceFor({ type: "WORDPRESS", buildCmd: null }).createFile(OWNER, PROJECT_ID, "wp-content/a.php", "x");
+
+      expect(owned()).toEqual(["wp-content", "wp-content/a.php"]);
+    });
+  });
+
   it("never hands over anything inside deploy/ or .git", async () => {
     const service = serviceFor(PHP_NO_BUILD);
     await service.createFile(OWNER, PROJECT_ID, "deploy/docker-compose.yml", "x");

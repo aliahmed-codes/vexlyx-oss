@@ -70,15 +70,24 @@ describe("handOverToPhp", () => {
     expect(changed.sort()).toEqual(["app", "app/src", "app/src/x.php"]);
   });
 
-  it("never touches the panel-owned deploy directory or .git", async () => {
+  it("never touches the panel-owned deploy directory", async () => {
     await fs.mkdir(path.join(root, "deploy"));
     await fs.writeFile(path.join(root, "deploy", "docker-compose.yml"), "x");
-    await fs.mkdir(path.join(root, ".git"));
     await fs.writeFile(path.join(root, "index.php"), "x");
 
     await handOverToPhp(root, [root], "project", { chown: record, recursive: true });
 
     expect(changed.sort()).toEqual([".", "index.php"]);
+  });
+
+  it("never touches .git, and in a checkout not the root either", async () => {
+    await fs.mkdir(path.join(root, ".git"));
+    await fs.writeFile(path.join(root, ".git", "config"), "x");
+    await fs.writeFile(path.join(root, "index.php"), "x");
+
+    await handOverToPhp(root, [root], "project", { chown: record, recursive: true });
+
+    expect(changed).toEqual(["index.php"]);
   });
 
   it("refuses a target inside deploy even when named directly", async () => {
@@ -130,6 +139,71 @@ describe("handOverToPhp", () => {
         },
       }),
     ).rejects.toThrow("nope");
+  });
+});
+
+describe("handOverToPhp in a git checkout", () => {
+  // The panel runs git as root. Once PHP owns the project directory git refuses
+  // the repository ("dubious ownership"), and PHP could also replace .git, whose
+  // hooks and config then run as root on the next pull. So the root of a
+  // checkout is never handed over; what is inside it still is.
+  let root: string;
+  let changed: string[];
+  const record = async (p: string) => {
+    changed.push(path.relative(root, p).replace(/\\/g, "/") || ".");
+  };
+
+  beforeEach(async () => {
+    root = await fs.realpath(await fs.mkdtemp(path.join(os.tmpdir(), "vexlyx-git-")));
+    changed = [];
+    await fs.mkdir(path.join(root, "sub"));
+    await fs.writeFile(path.join(root, "sub", "a.php"), "x");
+  });
+
+  afterEach(async () => {
+    await fs.rm(root, { recursive: true, force: true });
+  });
+
+  it("does not hand the root over when it contains .git", async () => {
+    await fs.mkdir(path.join(root, ".git"));
+    await handOverToPhp(root, [root], "project", { chown: record });
+    expect(changed).toEqual([]);
+  });
+
+  it("treats a .git file (worktree or submodule) as a checkout too", async () => {
+    await fs.writeFile(path.join(root, ".git"), "gitdir: /elsewhere\n");
+    await handOverToPhp(root, [root], "project", { chown: record });
+    expect(changed).toEqual([]);
+  });
+
+  it("still hands over the contents when asked to walk the tree, but never the root or .git", async () => {
+    await fs.mkdir(path.join(root, ".git"));
+    await handOverToPhp(root, [root], "project", { chown: record, recursive: true });
+    expect(changed.sort()).toEqual(["sub", "sub/a.php"]);
+  });
+
+  it("hands over files and folders inside a checkout", async () => {
+    await fs.mkdir(path.join(root, ".git"));
+    await handOverToPhp(root, [path.join(root, "sub"), path.join(root, "sub", "a.php")], "project", { chown: record });
+    expect(changed).toEqual(["sub", "sub/a.php"]);
+  });
+
+  it("still hands the root of a plain no-build project over", async () => {
+    await handOverToPhp(root, [root], "project", { chown: record });
+    expect(changed).toEqual(["."]);
+  });
+
+  it("does not mistake a file that merely starts with .git for a checkout", async () => {
+    await fs.writeFile(path.join(root, ".gitignore"), "x");
+    await handOverToPhp(root, [root], "project", { chown: record });
+    expect(changed).toEqual(["."]);
+  });
+
+  it("leaves the WordPress scope alone", async () => {
+    await fs.mkdir(path.join(root, ".git"));
+    await fs.mkdir(path.join(root, "wp-content"));
+    await handOverToPhp(root, [path.join(root, "wp-content")], "wp-content", { chown: record });
+    expect(changed).toEqual(["wp-content"]);
   });
 });
 

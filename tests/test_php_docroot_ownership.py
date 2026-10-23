@@ -67,6 +67,39 @@ class HandDocrootToPhpTest(unittest.TestCase):
         self.assertEqual([p.name for p in changed], ["project"])
         self.assertEqual(recorder.paths, [("project", 82, 82)])
 
+    def test_a_git_checkout_root_is_never_handed_over(self):
+        # git, run as root by the panel, refuses a repository whose directory
+        # another user owns ("dubious ownership"), and if PHP owned the root it
+        # could replace .git (hooks and config then run as root on the next pull).
+        (self.project / ".git").mkdir()
+        changed, recorder = self.hand("PHP", php_no_build=True)
+        self.assertEqual(changed, [])
+        self.assertEqual(recorder.paths, [])
+
+    def test_a_worktree_style_gitlink_file_counts_as_a_checkout_too(self):
+        (self.project / ".git").write_text("gitdir: /somewhere/else\n")
+        changed, recorder = self.hand("PHP", php_no_build=True)
+        self.assertEqual(changed, [])
+        self.assertEqual(recorder.paths, [])
+
+    def test_a_dangling_git_symlink_counts_as_a_checkout(self):
+        (self.project / ".git").symlink_to(Path(self._tmp.name) / "does-not-exist")
+        changed, recorder = self.hand("PHP", php_no_build=True)
+        self.assertEqual(changed, [])
+
+    def test_a_plain_no_build_project_without_git_still_gets_it(self):
+        (self.project / "gitignore-ish").mkdir()
+        (self.project / ".gitignore").write_text("x")  # a file that merely looks similar
+        changed, recorder = self.hand("PHP", php_no_build=True)
+        self.assertEqual([p.name for p in changed], ["project"])
+        self.assertEqual(recorder.paths, [("project", 82, 82)])
+
+    def test_wordpress_scope_is_unchanged_by_a_git_directory(self):
+        (self.project / ".git").mkdir()
+        (self.project / "wp-content").mkdir()
+        changed, _ = self.hand("WORDPRESS")
+        self.assertEqual([p.name for p in changed], ["wp-content"])
+
     def test_nixpacks_built_php_is_left_alone(self):
         changed, recorder = self.hand("PHP", php_no_build=False)
         self.assertEqual(changed, [])
