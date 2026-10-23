@@ -77,14 +77,6 @@ is_vexlyx_checkout() {
   [[ -f "$1/CLAUDE.md" && -f "$1/system/scripts/install/run.sh" ]]
 }
 
-# Edits to tracked files: the only local changes an upgrade has to protect.
-# Untracked files (a pnpm store, build output) and mode-only changes never get
-# in the way of a checkout. v0.3.x servers have the latter on tracked
-# OpenDKIM key files, because the Postfix entrypoint ran chmod -R on them.
-source_changes() {
-  git -c core.fileMode=false status --porcelain --untracked-files=no 2>/dev/null
-}
-
 prepare_mail_upgrade() {
   local migration_script state_dir status_line
   local runtime_files=(
@@ -125,6 +117,17 @@ prepare_mail_upgrade() {
   done
 }
 
+
+# Edits to tracked files: the only local changes an upgrade has to protect.
+# Untracked files (a pnpm store, build output) and mode-only changes never get
+# in the way of a checkout. v0.3.x servers have the latter on tracked
+# OpenDKIM key files, because the Postfix entrypoint ran chmod -R on them.
+# Defined after prepare_mail_upgrade, which calls it, so that
+# system/python/test_mail_upgrade.py (it runs that function's text on its own)
+# still receives it.
+source_changes() {
+  git -c core.fileMode=false status --porcelain --untracked-files=no 2>/dev/null
+}
 
 ensure_git() {
   if ! command -v git >/dev/null 2>&1; then
