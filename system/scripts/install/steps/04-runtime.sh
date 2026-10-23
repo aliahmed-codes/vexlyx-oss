@@ -37,8 +37,19 @@ else
 
   nodesource_key_file="$(mktemp)"
   curl -fsSL "${NODESOURCE_KEY_URL}" -o "${nodesource_key_file}"
-  # The first fpr record after "pub" is the primary key; subkeys follow it.
-  actual_fingerprint="$(gpg --show-keys --with-colons "${nodesource_key_file}" 2>/dev/null     | awk -F: '$1 == "fpr" { print $10; exit }' | tr 'a-f' 'A-F')"
+  # `gpg --dearmor` below converts the WHOLE file into the keyring apt trusts,
+  # so checking one fingerprint is not enough: a second key appended after the
+  # genuine one would be trusted too. The file must hold exactly one primary
+  # key (a `pub` record, no secret key) and that key must be the pinned one.
+  # The fingerprint is the first fpr record after the `pub` record; its
+  # subkeys follow it.
+  key_listing="$(gpg --show-keys --with-colons "${nodesource_key_file}" 2>/dev/null || true)"
+  primary_key_count="$(printf '%s\n' "${key_listing}" | awk -F: '$1 == "pub" || $1 == "sec" { n++ } END { print n + 0 }')"
+  actual_fingerprint="$(printf '%s\n' "${key_listing}" | awk -F: '$1 == "pub" { want = 1; next } $1 == "fpr" && want { print $10; exit }' | tr 'a-f' 'A-F')"
+  if [[ "${primary_key_count}" != 1 ]] || printf '%s\n' "${key_listing}" | grep -q '^sec:'; then
+    rm -f "${nodesource_key_file}"
+    die "The downloaded NodeSource key file must contain exactly one public key, found ${primary_key_count}. Refusing to trust it."
+  fi
   if [[ "${actual_fingerprint}" != "${expected_fingerprint}" ]]; then
     rm -f "${nodesource_key_file}"
     die "The NodeSource signing key does not match the pinned fingerprint (expected ${expected_fingerprint}, got ${actual_fingerprint:-none}). Refusing to install Node.js from it."
