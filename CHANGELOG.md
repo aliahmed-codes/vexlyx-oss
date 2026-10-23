@@ -4,10 +4,6 @@ All notable changes to Vexlyx are documented here. The format follows [Keep a Ch
 
 ## Unreleased
 
-### Security
-
-- The legacy per-project GitHub webhook returns one identical `401` for unknown projects, projects without a secret and bad signatures (no more project-ID enumeration) and ignores replayed `x-github-delivery` IDs; requests without that header get `400` (#67).
-
 ### Fixed
 
 - Large or slow file uploads are no longer cut off after 60 seconds, and an interrupted upload leaves no partial file behind, so a retry works. Upgrading restarts Traefik once to apply the new timeouts (#155).
